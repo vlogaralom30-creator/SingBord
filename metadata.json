@@ -1,0 +1,6 @@
+{
+  "name": "SingBord",
+  "description": "Simple, fast, 2D English-only keyboard by Naxxivo for Android devices.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
