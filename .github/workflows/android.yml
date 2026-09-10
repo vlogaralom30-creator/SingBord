@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -33,7 +33,7 @@ jobs:
         run: |
           if [ -f debug.keystore.base64 ]; then
             echo "Decoding debug.keystore..."
-            base64 -d debug.keystore.base64 > debug.keystore
+            tr -d '\r\n ' < debug.keystore.base64 | base64 -d > debug.keystore
           else
             echo "debug.keystore.base64 not found, proceeding without it."
           fi
