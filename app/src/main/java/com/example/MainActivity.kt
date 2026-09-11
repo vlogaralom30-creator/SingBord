@@ -71,11 +71,18 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
     var isEnabled by remember { mutableStateOf(isKeyboardEnabled(context)) }
     var isSelected by remember { mutableStateOf(isKeyboardSelected(context)) }
 
-    // Re-check activation status when screen gains focus
-    DisposableEffect(Unit) {
-        isEnabled = isKeyboardEnabled(context)
-        isSelected = isKeyboardSelected(context)
-        onDispose {}
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                isEnabled = isKeyboardEnabled(context)
+                isSelected = isKeyboardSelected(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     val currentSettings = KeyboardSettings(
