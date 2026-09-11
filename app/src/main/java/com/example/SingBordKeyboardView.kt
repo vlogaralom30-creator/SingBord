@@ -123,22 +123,30 @@ fun SingBordKeyboardView(
         Column(
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Popup preview banner (Flat 2D top badge if active)
-            if (settings.enableKeyPopup && activePopupKey != null) {
+            // Fixed-Height Top Character Preview Bar (eliminates layout height jumping during typing)
+            if (settings.enableKeyPopup) {
+                val isKeyPressed = activePopupKey != null
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(32.dp)
-                        .background(Color(0xFF1E293B)),
+                        .height(26.dp)
+                        .background(if (isKeyPressed) Color(0xFF2563EB) else Color(0xFFF1F5F9)),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = activePopupKey?.uppercase() ?: "",
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
+                        text = if (isKeyPressed) (activePopupKey?.uppercase() ?: "") else "SingBord",
+                        color = if (isKeyPressed) Color.White else Color(0xFF94A3B8),
+                        fontSize = if (isKeyPressed) 16.sp else 11.sp,
+                        fontWeight = if (isKeyPressed) FontWeight.Bold else FontWeight.SemiBold,
+                        letterSpacing = if (isKeyPressed) 0.sp else 1.2.sp
                     )
                 }
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(lineThicknessDp)
+                        .background(gridBorderColor)
+                )
             }
 
             // Top Dedicated Number Row (if enabled)

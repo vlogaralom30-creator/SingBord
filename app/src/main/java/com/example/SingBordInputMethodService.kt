@@ -1,5 +1,7 @@
 package com.example
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.inputmethodservice.InputMethodService
 import android.text.InputType
 import android.view.View
@@ -42,12 +44,19 @@ class SingBordInputMethodService : InputMethodService(),
     private val settingsState = mutableStateOf(KeyboardSettings())
     private val editorInfoState = mutableStateOf<EditorInfo?>(null)
 
+    private val prefChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        settingsState.value = prefs.getSettings()
+    }
+
     override fun onCreate() {
         super.onCreate()
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         prefs = SingBordPreferences(this)
         settingsState.value = prefs.getSettings()
+
+        val sharedPrefs = getSharedPreferences("singbord_settings", Context.MODE_PRIVATE)
+        sharedPrefs.registerOnSharedPreferenceChangeListener(prefChangeListener)
     }
 
     override fun onCreateInputView(): View {
@@ -137,6 +146,12 @@ class SingBordInputMethodService : InputMethodService(),
 
     override fun onDestroy() {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        try {
+            val sharedPrefs = getSharedPreferences("singbord_settings", Context.MODE_PRIVATE)
+            sharedPrefs.unregisterOnSharedPreferenceChangeListener(prefChangeListener)
+        } catch (e: Exception) {
+            // Ignore
+        }
         store.clear()
         super.onDestroy()
     }
