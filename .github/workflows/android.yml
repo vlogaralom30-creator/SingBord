@@ -23,26 +23,37 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | sdkmanager --licenses || true
+
       - name: Copy Environment Configuration
         run: |
           if [ -f .env.example ]; then
             cp .env.example .env
           fi
+          touch .env
 
-      - name: Restore Debug Keystore from Base64
+      - name: Restore or Generate Debug Keystore
         run: |
-          if [ -f debug.keystore.base64 ]; then
-            echo "Decoding debug.keystore..."
+          if [ -f debug.keystore.base64 ] && [ -s debug.keystore.base64 ]; then
+            echo "Restoring debug.keystore from base64..."
             tr -d '\r\n ' < debug.keystore.base64 | base64 -d > debug.keystore
-          else
-            echo "debug.keystore.base64 not found, proceeding without it."
           fi
+          if [ ! -f debug.keystore ] || [ ! -s debug.keystore ]; then
+            echo "Generating fallback debug.keystore..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          ls -la debug.keystore
 
       - name: Grant Execute Permission to Gradlew
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleDebug --stacktrace --no-daemon --no-configuration-cache
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
