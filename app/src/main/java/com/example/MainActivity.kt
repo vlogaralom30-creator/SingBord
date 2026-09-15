@@ -64,6 +64,10 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
     var enableKeyPopup by remember { mutableStateOf(prefs.enableKeyPopup) }
     var autoCapitalization by remember { mutableStateOf(prefs.autoCapitalization) }
 
+    // Privacy & Terms dialog states
+    var showPrivacyDialog by remember { mutableStateOf(false) }
+    var showTermsDialog by remember { mutableStateOf(false) }
+
     // State for test typing text
     var testTypingText by remember { mutableStateOf("") }
 
@@ -107,30 +111,68 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header Bar
+            // Modernized App Open Hero Section
             FlatCard {
                 Column(
                     modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text(
-                                text = "SingBord",
-                                fontSize = 26.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF0F172A)
-                            )
-                            Text(
-                                text = "by Naxxivo • English Keyboard",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFF2563EB)
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            // Unique 2D Flat App Icon Badge
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .background(Color(0xFF0F172A), RoundedCornerShape(8.dp))
+                                    .border(1.dp, Color(0xFF2563EB), RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Keyboard,
+                                    contentDescription = "SingBord Logo",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+
+                            Column {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = "SingBord",
+                                        fontSize = 22.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0F172A)
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .background(Color(0xFFDCFCE7), RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = "v1.0.0",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF15803D)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "Zero-Gap 2D Minimalist Keyboard",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF2563EB),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
                         }
 
                         Box(
@@ -140,21 +182,58 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = "2D FLAT UI",
-                                fontSize = 11.sp,
+                                text = "100% OFFLINE",
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF1E40AF)
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
-
                     Text(
-                        text = "Simple, ultra-fast 2D flat keyboard with zero-gap line-separated keys for high precision typing.",
+                        text = "Pure speed, zero typing latency, and total privacy. No ads, no cloud sync, and zero keystroke logging.",
                         fontSize = 13.sp,
-                        color = Color(0xFF475569)
+                        color = Color(0xFF475569),
+                        lineHeight = 18.sp
                     )
+
+                    // Quick Action Badges for Privacy & User Agreement
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { showPrivacyDialog = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(4.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Shield,
+                                contentDescription = "Privacy Policy",
+                                modifier = Modifier.size(16.dp),
+                                tint = Color(0xFF16A34A)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Privacy Policy", fontSize = 12.sp, color = Color(0xFF0F172A))
+                        }
+
+                        OutlinedButton(
+                            onClick = { showTermsDialog = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(4.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Terms",
+                                modifier = Modifier.size(16.dp),
+                                tint = Color(0xFF2563EB)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("User Terms", fontSize = 12.sp, color = Color(0xFF0F172A))
+                        }
+                    }
                 }
             }
 
@@ -509,6 +588,70 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
                 }
             }
 
+            // Privacy & Legal Trust Card
+            FlatCard {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Privacy & Trust",
+                            tint = Color(0xFF2563EB),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Privacy & Legal Trust",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0F172A)
+                        )
+                    }
+
+                    Text(
+                        text = "SingBord does not request INTERNET permissions. It is architecturally impossible for your keystrokes, passwords, or personal chats to leave this phone.",
+                        fontSize = 12.sp,
+                        color = Color(0xFF475569),
+                        lineHeight = 17.sp
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { showPrivacyDialog = true },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFF1F5F9),
+                                contentColor = Color(0xFF0F172A)
+                            ),
+                            shape = RoundedCornerShape(4.dp),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
+                            Text("View Privacy Policy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        Button(
+                            onClick = { showTermsDialog = true },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFF1F5F9),
+                                contentColor = Color(0xFF0F172A)
+                            ),
+                            shape = RoundedCornerShape(4.dp),
+                            contentPadding = PaddingValues(vertical = 8.dp)
+                        ) {
+                            Text("User Agreement", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+
             // Branding & Credits Footer
             FlatCard {
                 Column(
@@ -571,6 +714,14 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        if (showPrivacyDialog) {
+            PrivacyPolicyDialog(onDismiss = { showPrivacyDialog = false })
+        }
+
+        if (showTermsDialog) {
+            TermsOfServiceDialog(onDismiss = { showTermsDialog = false })
         }
     }
 }
@@ -696,4 +847,102 @@ fun showImePicker(context: Context) {
     } catch (e: Exception) {
         // Fallback
     }
+}
+
+@Composable
+fun PrivacyPolicyDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Shield,
+                    contentDescription = null,
+                    tint = Color(0xFF16A34A)
+                )
+                Text("Privacy Policy", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "100% Offline & Private Commitment",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = Color(0xFF0F172A)
+                )
+                Text(
+                    text = "• Zero Internet Access: SingBord does not declare INTERNET permission. It is physically impossible to send data anywhere.\n\n" +
+                            "• Zero Data Collection: We do not log, record, store, or transmit your keystrokes, passwords, or personal messages.\n\n" +
+                            "• No Trackers or Ads: No analytics SDKs or advertising networks are bundled.\n\n" +
+                            "• Local Preferences: Your settings (height, border thickness, sound, number row) are saved strictly on this device.",
+                    fontSize = 13.sp,
+                    color = Color(0xFF475569),
+                    lineHeight = 18.sp
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Understood", fontWeight = FontWeight.Bold, color = Color(0xFF2563EB))
+            }
+        }
+    )
+}
+
+@Composable
+fun TermsOfServiceDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = null,
+                    tint = Color(0xFF2563EB)
+                )
+                Text("User Agreement", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Open Source License & Terms",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = Color(0xFF0F172A)
+                )
+                Text(
+                    text = "• Open Source: SingBord is open-source software provided under the Apache 2.0 license.\n\n" +
+                            "• Safe Usage: You are free to use SingBord on any compatible Android device for personal, work, or educational needs.\n\n" +
+                            "• As-Is Software: Provided without warranties of any kind. Developers assume no liability for third-party device compatibility.\n\n" +
+                            "• Creator: Developed by Rony Ahammad (Naxxivo Tech Lab).",
+                    fontSize = 13.sp,
+                    color = Color(0xFF475569),
+                    lineHeight = 18.sp
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("I Agree", fontWeight = FontWeight.Bold, color = Color(0xFF2563EB))
+            }
+        }
+    )
 }
