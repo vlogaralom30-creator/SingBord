@@ -46,6 +46,8 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
@@ -58,6 +60,10 @@ import androidx.compose.material.icons.filled.KeyboardReturn
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NavigateNext
 import androidx.compose.material.icons.filled.Palette
+import com.example.data.CloudClipboardItem
+import com.example.data.SupabaseBackendClient
+import kotlinx.coroutines.launch
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
 import androidx.compose.material.icons.filled.Settings
@@ -65,11 +71,16 @@ import androidx.compose.material.icons.filled.SpaceBar
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -77,11 +88,15 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+val LocalKeyboardTheme = staticCompositionLocalOf { KeyboardThemes.CLEAN_LIGHT }
 
 enum class ShiftState {
     OFF,
@@ -108,7 +123,8 @@ enum class KeyboardSubPanel {
     CLIPBOARD,
     NUMBER_DIALER,
     THEME_PICKER,
-    FONT_PICKER
+    FONT_PICKER,
+    VOICE_INPUT
 }
 
 interface KeyboardActionListener {
@@ -127,7 +143,7 @@ interface KeyboardActionListener {
     fun onMoveToStart() {}
     fun onMoveToEnd() {}
     fun onSelectText(direction: Int) {}
-    fun onVoiceInput() {}
+    fun onVoiceInput(languageCode: String? = null) {}
     fun onOpenSettings() {}
 }
 
@@ -140,6 +156,7 @@ fun SingBordKeyboardView(
 ) {
     var shiftState by remember { mutableStateOf(ShiftState.OFF) }
     var keyboardMode by remember { mutableStateOf(KeyboardMode.ALPHA) }
+    var currentLanguage by remember(settings.defaultLanguage) { mutableStateOf(settings.defaultLanguage) }
     var toolbarMode by remember { mutableStateOf(ToolbarMode.SUGGESTIONS) }
     var activeSubPanel by remember { mutableStateOf(KeyboardSubPanel.NONE) }
     var activePopupKey by remember { mutableStateOf<String?>(null) }
@@ -156,6 +173,15 @@ fun SingBordKeyboardView(
     var selectedEmojiCategory by remember { mutableStateOf(EmojiCategory.SMILEYS) }
     var recentEmojis by remember { mutableStateOf(prefs.getRecentEmojis()) }
     val coroutineScope = rememberCoroutineScope()
+
+    fun cycleLanguage() {
+        currentLanguage = when (currentLanguage) {
+            KeyboardLanguage.ENGLISH -> KeyboardLanguage.BANGLA_PROBHAT
+            KeyboardLanguage.BANGLA_PROBHAT -> KeyboardLanguage.AVRO
+            KeyboardLanguage.AVRO -> KeyboardLanguage.ENGLISH
+        }
+        currentComposingWord = ""
+    }
 
     fun isSensitiveInput(): Boolean {
         if (editorInfo == null) return false
@@ -192,7 +218,7 @@ fun SingBordKeyboardView(
         recentEmojis = prefs.getRecentEmojis()
     }
 
-    fun handleKeyPress(text: String) {
+    fun handleKeyPress(text: String, isRawChar: Boolean = false) {
         triggerFeedback()
         if (toolbarMode == ToolbarMode.TOOLS) {
             toolbarMode = ToolbarMode.SUGGESTIONS
@@ -210,19 +236,27 @@ fun SingBordKeyboardView(
             }
         }
 
-        val rawCharToCommit = when (shiftState) {
-            ShiftState.ON, ShiftState.CAPS_LOCK -> text.uppercase()
-            ShiftState.OFF -> text.lowercase()
+        val isBangla = text.any { it in '\u0980'..'\u09FF' } || currentLanguage == KeyboardLanguage.BANGLA_PROBHAT || isRawChar
+        val rawCharToCommit = if (isBangla) {
+            text
+        } else {
+            when (shiftState) {
+                ShiftState.ON, ShiftState.CAPS_LOCK -> text.uppercase()
+                ShiftState.OFF -> text.lowercase()
+            }
         }
 
-        val charToCommit = if (settings.enableStylishFonts && activeFontStyle != StylishFontStyle.NORMAL) {
+        val charToCommit = if (!isBangla && settings.enableStylishFonts && activeFontStyle != StylishFontStyle.NORMAL) {
             StylishFontEngine.transformText(rawCharToCommit, activeFontStyle)
         } else {
             rawCharToCommit
         }
         listener?.onTextEntered(charToCommit)
 
-        if (rawCharToCommit.all { it.isLetter() || it == '\'' }) {
+        val isWordConstituent = rawCharToCommit.all {
+            it.isLetter() || it == '\'' || it in '\u0980'..'\u09FF'
+        }
+        if (isWordConstituent) {
             currentComposingWord += rawCharToCommit
         } else {
             if (currentComposingWord.isNotBlank()) {
@@ -269,31 +303,67 @@ fun SingBordKeyboardView(
     val totalContentHeight = (keyHeight * 4) + topNumberRowHeight + (lineThicknessDp * if (is5RowLayout) 4 else 3)
     val totalSubPanelHeight = totalContentHeight
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(theme.keyboardBg) // Theme background for grid separators
-            .border(width = lineThicknessDp, color = gridBorderColor)
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth()
+    val isFlatGrid = theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID
+
+    CompositionLocalProvider(LocalKeyboardTheme provides theme) {
+        val bgBrush = when {
+            theme.bgMeshColors != null -> Brush.linearGradient(theme.bgMeshColors!!)
+            theme.bgGradientTop != null && theme.bgGradientBottom != null -> Brush.verticalGradient(
+                listOfNotNull(theme.bgGradientTop, theme.bgGradientCenter, theme.bgGradientBottom)
+            )
+            else -> null
+        }
+
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .then(
+                    if (bgBrush != null) Modifier.background(bgBrush)
+                    else Modifier.background(theme.keyboardBg)
+                )
+                .then(
+                    if (isFlatGrid) Modifier.border(width = lineThicknessDp, color = gridBorderColor)
+                    else Modifier
+                )
+                .then(
+                    if (!isFlatGrid) Modifier.padding(horizontal = 2.dp, vertical = 2.dp)
+                    else Modifier
+                )
         ) {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
             // Ridmik-Style Dual-Mode Top Toolbar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(38.dp)
-                    .background(theme.suggestionStripBg),
+                    .height(40.dp)
+                    .background(theme.suggestionStripBg)
+                    .then(if (!isFlatGrid) Modifier.padding(horizontal = 4.dp, vertical = 2.dp) else Modifier),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left Side: T Toggle Icon Button (Circular / Round style)
+                // Left Side: T Toggle Icon Button
                 val isToolsActive = toolbarMode == ToolbarMode.TOOLS || activeSubPanel != KeyboardSubPanel.NONE
+                val tBtnShape = RoundedCornerShape(if (isFlatGrid) 15.dp else 8.dp)
                 Box(
                     modifier = Modifier
-                        .padding(horizontal = 4.dp)
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .background(if (isToolsActive) theme.accentColor else theme.functionKeyBg)
+                        .padding(horizontal = 2.dp)
+                        .size(32.dp)
+                        .clip(tBtnShape)
+                        .then(
+                            if (isToolsActive) {
+                                Modifier.background(theme.accentColor)
+                            } else if (!isFlatGrid) {
+                                Modifier
+                                    .background(theme.functionKeyBg.copy(alpha = if (theme.isDark) 0.65f else 0.85f))
+                                    .then(
+                                        if (theme.keyBorderWidthDp > 0f) Modifier.border(0.7.dp, theme.keyBorderColor.copy(alpha = 0.5f), tBtnShape)
+                                        else Modifier
+                                    )
+                            } else {
+                                Modifier.background(theme.functionKeyBg)
+                            }
+                        )
                         .clickable {
                             triggerFeedback()
                             if (activeSubPanel != KeyboardSubPanel.NONE) {
@@ -313,15 +383,18 @@ fun SingBordKeyboardView(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+                if (isFlatGrid) {
+                    Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+                } else {
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
 
                 if (toolbarMode == ToolbarMode.TOOLS) {
                     // Tools Panel Strip (Icon-only, no name text): Emoji, Theme, Clipboard, Edit Pad, Number Dialer, Stylish Fonts, Settings, Voice
                     Row(
                         modifier = Modifier
                             .weight(1f)
-                            .fillMaxHeight()
-                            .background(theme.suggestionStripBg),
+                            .fillMaxHeight(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
@@ -425,20 +498,22 @@ fun SingBordKeyboardView(
                             icon = Icons.Default.Mic,
                             contentDescription = "Voice Input",
                             theme = theme,
-                            isActive = false,
+                            isActive = activeSubPanel == KeyboardSubPanel.VOICE_INPUT,
                             onClick = {
                                 triggerFeedback()
-                                listener?.onVoiceInput()
+                                keyboardMode = KeyboardMode.ALPHA
+                                activeSubPanel = if (activeSubPanel == KeyboardSubPanel.VOICE_INPUT) KeyboardSubPanel.NONE else KeyboardSubPanel.VOICE_INPUT
                             }
                         )
                     }
                 } else {
                     // Suggestion Mode Strip
-                    val suggestions = remember(currentComposingWord, settings.enableBanglish, settings.enableWordLearning) {
+                    val suggestions = remember(currentComposingWord, currentLanguage, settings.enableBanglish, settings.enableWordLearning) {
                         if (settings.showSuggestions) {
                             WordSuggestionEngine.getSuggestions(
                                 prefix = currentComposingWord,
                                 userRepo = if (settings.enableWordLearning) userRepo else null,
+                                language = currentLanguage,
                                 enableBanglish = settings.enableBanglish,
                                 maxCount = 4
                             )
@@ -456,11 +531,13 @@ fun SingBordKeyboardView(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (suggestions.isEmpty() && currentComposingWord.isBlank()) {
+                            val emptyShape = RoundedCornerShape(if (isFlatGrid) 0.dp else 8.dp)
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .fillMaxHeight()
-                                    .background(theme.candidateBg)
+                                    .fillMaxHeight(if (isFlatGrid) 1f else 0.88f)
+                                    .clip(emptyShape)
+                                    .background(if (isFlatGrid) theme.candidateBg else theme.functionKeyBg.copy(alpha = 0.35f))
                                     .clickable {
                                         triggerFeedback()
                                         toolbarMode = ToolbarMode.TOOLS
@@ -470,26 +547,41 @@ fun SingBordKeyboardView(
                                 Text(
                                     text = if (keyboardMode == KeyboardMode.EMOJI) "Emoji • Tap T for Tools" else "SingBord • Tap T for Tools",
                                     fontSize = 12.sp,
-                                    color = theme.functionTextColor.copy(alpha = 0.7f),
+                                    color = theme.functionTextColor.copy(alpha = 0.75f),
                                     fontWeight = FontWeight.Medium
                                 )
                             }
                         } else {
                             suggestions.forEachIndexed { index, candidate ->
                                 if (index > 0) {
-                                    Spacer(
-                                        modifier = Modifier
-                                            .width(lineThicknessDp)
-                                            .fillMaxHeight()
-                                            .background(gridBorderColor)
-                                    )
+                                    if (isFlatGrid) {
+                                        Spacer(
+                                            modifier = Modifier
+                                                .width(lineThicknessDp)
+                                                .fillMaxHeight()
+                                                .background(gridBorderColor)
+                                        )
+                                    } else {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                    }
                                 }
                                 val isHighlighted = currentComposingWord.isNotBlank() && (index == 0 || (suggestions.size > 1 && index == 1))
+                                val candShape = RoundedCornerShape(if (isFlatGrid) 0.dp else 8.dp)
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .fillMaxHeight()
-                                        .background(if (isHighlighted) theme.accentColor.copy(alpha = 0.18f) else theme.candidateBg)
+                                        .fillMaxHeight(if (isFlatGrid) 1f else 0.88f)
+                                        .clip(candShape)
+                                        .background(
+                                            if (isHighlighted) theme.accentColor.copy(alpha = if (theme.isDark) 0.28f else 0.18f)
+                                            else if (isFlatGrid) theme.candidateBg
+                                            else theme.keyBg.copy(alpha = 0.85f)
+                                        )
+                                        .then(
+                                            if (isHighlighted && !isFlatGrid) Modifier.border(1.dp, theme.accentColor.copy(alpha = 0.65f), candShape)
+                                            else if (!isFlatGrid && theme.keyBorderWidthDp > 0f) Modifier.border(0.6.dp, theme.keyBorderColor.copy(alpha = 0.4f), candShape)
+                                            else Modifier
+                                        )
                                         .clickable {
                                             triggerFeedback()
                                             maybeLearnWord(candidate)
@@ -521,25 +613,47 @@ fun SingBordKeyboardView(
                         }
                     }
 
-                    // Voice / Mic icon on the right side: ONLY shown when there are NO word suggestions active
-                    if (!hasSuggestions) {
-                        Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+                    // Voice / Mic icon on the right side: ONLY shown when enabled in settings and NO word suggestions active
+                    if (settings.enableVoiceTyping && !hasSuggestions) {
+                        if (isFlatGrid) {
+                            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+                        } else {
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                        val micShape = RoundedCornerShape(if (isFlatGrid) 15.dp else 8.dp)
+                        val resolvedVoiceLang = if (settings.voiceLanguage == "auto") {
+                            if (currentLanguage == KeyboardLanguage.ENGLISH) "en-US" else "bn-BD"
+                        } else {
+                            settings.voiceLanguage
+                        }
                         Box(
                             modifier = Modifier
-                                .padding(horizontal = 4.dp)
-                                .size(30.dp)
-                                .clip(CircleShape)
-                                .background(theme.functionKeyBg)
+                                .padding(horizontal = 2.dp)
+                                .size(32.dp)
+                                .clip(micShape)
+                                .then(
+                                    if (!isFlatGrid) {
+                                        Modifier
+                                            .background(theme.functionKeyBg.copy(alpha = if (theme.isDark) 0.65f else 0.85f))
+                                            .then(
+                                                if (theme.keyBorderWidthDp > 0f) Modifier.border(0.7.dp, theme.keyBorderColor.copy(alpha = 0.5f), micShape)
+                                                else Modifier
+                                            )
+                                    } else {
+                                        Modifier.background(theme.functionKeyBg)
+                                    }
+                                )
                                 .clickable {
                                     triggerFeedback()
-                                    listener?.onVoiceInput()
+                                    keyboardMode = KeyboardMode.ALPHA
+                                    activeSubPanel = KeyboardSubPanel.VOICE_INPUT
                                 },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Mic,
-                                contentDescription = "Voice Input",
-                                tint = theme.keyTextColor,
+                                contentDescription = "Voice Input ($resolvedVoiceLang)",
+                                tint = theme.functionTextColor,
                                 modifier = Modifier.size(17.dp)
                             )
                         }
@@ -547,12 +661,16 @@ fun SingBordKeyboardView(
                 }
             }
 
-            Spacer(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(lineThicknessDp)
-                    .background(gridBorderColor)
-            )
+            if (isFlatGrid) {
+                Spacer(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(lineThicknessDp)
+                        .background(gridBorderColor)
+                )
+            } else {
+                Spacer(modifier = Modifier.height(2.dp))
+            }
 
             if (activeSubPanel != KeyboardSubPanel.NONE) {
                 when (activeSubPanel) {
@@ -645,6 +763,23 @@ fun SingBordKeyboardView(
                             triggerFeedback = { triggerFeedback() }
                         )
                     }
+                    KeyboardSubPanel.VOICE_INPUT -> {
+                        val resolvedVoiceLang = if (settings.voiceLanguage == "auto") {
+                            if (currentLanguage == KeyboardLanguage.ENGLISH) "en-US" else "bn-BD"
+                        } else {
+                            settings.voiceLanguage
+                        }
+                        VoiceInputSubPanel(
+                            theme = theme,
+                            lineThicknessDp = lineThicknessDp,
+                            gridBorderColor = gridBorderColor,
+                            totalHeight = totalSubPanelHeight,
+                            initialLanguageCode = resolvedVoiceLang,
+                            listener = listener,
+                            onClose = { activeSubPanel = KeyboardSubPanel.NONE },
+                            triggerFeedback = { triggerFeedback() }
+                        )
+                    }
                     KeyboardSubPanel.NONE -> {}
                 }
             } else if (keyboardMode == KeyboardMode.EMOJI) {
@@ -653,24 +788,40 @@ fun SingBordKeyboardView(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(38.dp)
-                        .background(theme.functionKeyBg),
+                        .background(theme.functionKeyBg)
+                        .then(if (!isFlatGrid) Modifier.padding(horizontal = 4.dp, vertical = 2.dp) else Modifier),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val tabShape = RoundedCornerShape(if (isFlatGrid) 0.dp else 10.dp)
                     EmojiCategory.values().forEachIndexed { index, category ->
                         if (index > 0) {
-                            Spacer(
-                                modifier = Modifier
-                                    .width(lineThicknessDp)
-                                    .fillMaxHeight()
-                                    .background(gridBorderColor)
-                            )
+                            if (isFlatGrid) {
+                                Spacer(
+                                    modifier = Modifier
+                                        .width(lineThicknessDp)
+                                        .fillMaxHeight()
+                                        .background(gridBorderColor)
+                                )
+                            } else {
+                                Spacer(modifier = Modifier.width(3.dp))
+                            }
                         }
                         val isSelected = selectedEmojiCategory == category
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .fillMaxHeight()
-                                .background(if (isSelected) theme.accentColor.copy(alpha = 0.25f) else theme.candidateBg)
+                                .fillMaxHeight(if (isFlatGrid) 1f else 0.88f)
+                                .clip(tabShape)
+                                .background(
+                                    if (isSelected) theme.accentColor.copy(alpha = if (theme.isDark) 0.32f else 0.22f)
+                                    else if (isFlatGrid) theme.candidateBg
+                                    else theme.keyBg.copy(alpha = 0.55f)
+                                )
+                                .then(
+                                    if (isSelected && !isFlatGrid) Modifier.border(1.dp, theme.accentColor.copy(alpha = 0.7f), tabShape)
+                                    else if (!isFlatGrid && theme.keyBorderWidthDp > 0f) Modifier.border(0.6.dp, theme.keyBorderColor.copy(alpha = 0.35f), tabShape)
+                                    else Modifier
+                                )
                                 .clickable {
                                     triggerFeedback()
                                     selectedEmojiCategory = category
@@ -684,18 +835,28 @@ fun SingBordKeyboardView(
                         }
                     }
 
-                    Spacer(
-                        modifier = Modifier
-                            .width(lineThicknessDp)
-                            .fillMaxHeight()
-                            .background(gridBorderColor)
-                    )
+                    if (isFlatGrid) {
+                        Spacer(
+                            modifier = Modifier
+                                .width(lineThicknessDp)
+                                .fillMaxHeight()
+                                .background(gridBorderColor)
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
 
+                    val symbolsChipShape = RoundedCornerShape(if (isFlatGrid) 0.dp else 10.dp)
                     Box(
                         modifier = Modifier
                             .weight(1.3f)
-                            .fillMaxHeight()
-                            .background(theme.accentColor.copy(alpha = 0.15f))
+                            .fillMaxHeight(if (isFlatGrid) 1f else 0.88f)
+                            .clip(symbolsChipShape)
+                            .background(theme.accentColor.copy(alpha = if (theme.isDark) 0.25f else 0.16f))
+                            .then(
+                                if (!isFlatGrid) Modifier.border(1.dp, theme.accentColor.copy(alpha = 0.6f), symbolsChipShape)
+                                else Modifier
+                            )
                             .clickable {
                                 triggerFeedback()
                                 keyboardMode = KeyboardMode.ALPHA
@@ -720,15 +881,19 @@ fun SingBordKeyboardView(
                     }
                 }
 
-                Spacer(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(lineThicknessDp)
-                        .background(gridBorderColor)
-                )
+                if (isFlatGrid) {
+                    Spacer(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(lineThicknessDp)
+                            .background(gridBorderColor)
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(2.dp))
+                }
 
                 // Emoji Grid Area (Calculated so total emoji screen height exactly equals totalContentHeight)
-                val gridHeight = (totalContentHeight - 38.dp - keyHeight - (lineThicknessDp * 2)).coerceAtLeast(140.dp)
+                val gridHeight = (totalContentHeight - 38.dp - keyHeight - (if (isFlatGrid) lineThicknessDp * 2 else 4.dp)).coerceAtLeast(140.dp)
 
                 val currentEmojis = remember(selectedEmojiCategory, recentEmojis) {
                     EmojiData.getEmojis(selectedEmojiCategory, recentEmojis)
@@ -739,15 +904,17 @@ fun SingBordKeyboardView(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(gridHeight)
-                        .background(theme.keyBg),
+                        .background(if (isFlatGrid) theme.keyBg else theme.keyboardBg),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     items(currentEmojis) { emoji ->
+                        val emojiShape = RoundedCornerShape(if (isFlatGrid) 0.dp else 8.dp)
                         Box(
                             modifier = Modifier
                                 .aspectRatio(1f)
+                                .clip(emojiShape)
                                 .clickable { handleEmojiPress(emoji) },
                             contentAlignment = Alignment.Center
                         ) {
@@ -760,12 +927,16 @@ fun SingBordKeyboardView(
                     }
                 }
 
-                Spacer(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(lineThicknessDp)
-                        .background(gridBorderColor)
-                )
+                if (isFlatGrid) {
+                    Spacer(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(lineThicknessDp)
+                            .background(gridBorderColor)
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(2.dp))
+                }
 
                 // Bottom Row in Emoji Mode
                 Row(
@@ -778,56 +949,93 @@ fun SingBordKeyboardView(
                         backgroundColor = functionKeyBg,
                         textColor = functionTextColor,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1.5f),
+                        isFunctionKey = true,
+                        badgeColor = theme.modeBadgeColor,
+                        modifier = Modifier.weight(1.4f),
                         onClick = {
                             triggerFeedback()
                             keyboardMode = KeyboardMode.ALPHA
                         }
                     )
 
-                    Spacer(
-                        modifier = Modifier
-                            .width(lineThicknessDp)
-                            .fillMaxHeight()
-                            .background(gridBorderColor)
-                    )
+                    if (isFlatGrid) {
+                        Spacer(
+                            modifier = Modifier
+                                .width(lineThicknessDp)
+                                .fillMaxHeight()
+                                .background(gridBorderColor)
+                        )
+                    }
+
+                    if (theme.showLanguageGlobeKey) {
+                        IconKeyButton(
+                            icon = Icons.Default.Language,
+                            contentDescription = "Language",
+                            backgroundColor = functionKeyBg,
+                            iconColor = functionTextColor,
+                            isFunctionKey = true,
+                            modifier = Modifier.weight(0.9f),
+                            onClick = {
+                                triggerFeedback()
+                                keyboardMode = KeyboardMode.ALPHA
+                            }
+                        )
+                        if (isFlatGrid) {
+                            Spacer(
+                                modifier = Modifier
+                                    .width(lineThicknessDp)
+                                    .fillMaxHeight()
+                                    .background(gridBorderColor)
+                            )
+                        }
+                    }
 
                     SpacebarKey(
                         backgroundColor = letterKeyBg,
-                        modifier = Modifier.weight(3.5f),
+                        modifier = Modifier.weight(
+                            if (theme.showLanguageGlobeKey) 3.2f else 3.8f
+                        ),
                         onSpace = { listener?.onSpace() },
                         onDoubleSpacePeriod = { listener?.onDoubleSpacePeriod() },
                         onMoveCursor = { dir -> listener?.onMoveCursor(dir) },
                         triggerFeedback = { triggerFeedback() }
                     )
 
-                    Spacer(
-                        modifier = Modifier
-                            .width(lineThicknessDp)
-                            .fillMaxHeight()
-                            .background(gridBorderColor)
-                    )
+                    if (isFlatGrid) {
+                        Spacer(
+                            modifier = Modifier
+                                .width(lineThicknessDp)
+                                .fillMaxHeight()
+                                .background(gridBorderColor)
+                        )
+                    }
 
                     RepeatingBackspaceKey(
                         backgroundColor = functionKeyBg,
                         iconColor = functionTextColor,
-                        modifier = Modifier.weight(1.5f),
+                        badgeColor = theme.backspaceBadgeColor,
+                        modifier = Modifier.weight(1.3f),
                         onDelete = {
                             triggerFeedback()
                             listener?.onDelete()
                         }
                     )
 
-                    Spacer(
-                        modifier = Modifier
-                            .width(lineThicknessDp)
-                            .fillMaxHeight()
-                            .background(gridBorderColor)
-                    )
+                    if (isFlatGrid) {
+                        Spacer(
+                            modifier = Modifier
+                                .width(lineThicknessDp)
+                                .fillMaxHeight()
+                                .background(gridBorderColor)
+                        )
+                    }
 
                     EnterKeyButton(
                         editorInfo = editorInfo,
-                        modifier = Modifier.weight(1.5f),
+                        accentColor = accentColor,
+                        accentTextColor = accentTextColor,
+                        badgeColor = theme.enterBadgeColor,
+                        modifier = Modifier.weight(1.3f),
                         onClick = {
                             triggerFeedback()
                             listener?.onEnter()
@@ -837,197 +1045,376 @@ fun SingBordKeyboardView(
             } else {
                 // Top Dedicated Number Row (if enabled across all keyboard modes)
                 if (settings.showNumberRow) {
-                    val numberRow = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+                    val isProbhat = currentLanguage == KeyboardLanguage.BANGLA_PROBHAT
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(keyHeight * 0.85f)
                     ) {
-                        numberRow.forEachIndexed { index, num ->
-                            if (index > 0) {
-                                Spacer(
-                                    modifier = Modifier
-                                        .width(lineThicknessDp)
-                                        .fillMaxHeight()
-                                        .background(gridBorderColor)
+                        if (isProbhat) {
+                            BanglaProbhatLayout.numberRow.forEachIndexed { index, pk ->
+                                if (index > 0 && isFlatGrid) {
+                                    Spacer(
+                                        modifier = Modifier
+                                            .width(lineThicknessDp)
+                                            .fillMaxHeight()
+                                            .background(gridBorderColor)
+                                    )
+                                }
+                                FlatKeyButton(
+                                    text = pk.normal,
+                                    subText = pk.hint,
+                                    alternates = pk.alternates,
+                                    backgroundColor = functionKeyBg,
+                                    textColor = functionTextColor,
+                                    isFunctionKey = true,
+                                    fontSize = 15.sp,
+                                    modifier = Modifier.weight(1f),
+                                    onAlternateSelected = { alt -> handleKeyPress(alt, isRawChar = true) },
+                                    onClick = { handleKeyPress(pk.normal, isRawChar = true) }
                                 )
                             }
-                            val displayText = if (settings.enableStylishFonts && activeFontStyle != StylishFontStyle.NORMAL) {
-                                StylishFontEngine.transformText(num, activeFontStyle)
-                            } else {
-                                num
+                        } else {
+                            val numberRow = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+                            numberRow.forEachIndexed { index, num ->
+                                if (index > 0 && isFlatGrid) {
+                                    Spacer(
+                                        modifier = Modifier
+                                            .width(lineThicknessDp)
+                                            .fillMaxHeight()
+                                            .background(gridBorderColor)
+                                    )
+                                }
+                                val displayText = if (settings.enableStylishFonts && activeFontStyle != StylishFontStyle.NORMAL) {
+                                    StylishFontEngine.transformText(num, activeFontStyle)
+                                } else {
+                                    num
+                                }
+                                FlatKeyButton(
+                                    text = displayText,
+                                    backgroundColor = functionKeyBg,
+                                    textColor = functionTextColor,
+                                    isFunctionKey = true,
+                                    fontSize = 15.sp,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { handleKeyPress(num) }
+                                )
                             }
-                            FlatKeyButton(
-                                text = displayText,
-                                backgroundColor = functionKeyBg,
-                                textColor = functionTextColor,
-                                modifier = Modifier.weight(1f),
-                                onClick = { handleKeyPress(num) }
-                            )
                         }
                     }
-                    Spacer(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(lineThicknessDp)
-                            .background(gridBorderColor)
-                    )
+                    if (isFlatGrid) {
+                        Spacer(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(lineThicknessDp)
+                                .background(gridBorderColor)
+                        )
+                    }
                 }
 
                 if (keyboardMode == KeyboardMode.ALPHA) {
-                    // Row 1
-                    val row1 = listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p")
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(keyHeight)
-                    ) {
-                        row1.forEachIndexed { index, letter ->
-                            if (index > 0) {
-                                Spacer(
-                                    modifier = Modifier
-                                        .width(lineThicknessDp)
-                                        .fillMaxHeight()
-                                        .background(gridBorderColor)
+                    val isProbhat = currentLanguage == KeyboardLanguage.BANGLA_PROBHAT
+
+                    if (isProbhat) {
+                        // Bangla Probhat Layout (Exact match to Reference Screenshots)
+                        // Row 1 (12 Keys)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(keyHeight)
+                        ) {
+                            BanglaProbhatLayout.row1.forEachIndexed { index, k ->
+                                if (index > 0 && isFlatGrid) {
+                                    Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+                                }
+                                val keyText = if (shiftState != ShiftState.OFF) k.shifted else k.normal
+                                val sub = if (shiftState == ShiftState.OFF) k.hint else null
+                                FlatKeyButton(
+                                    text = keyText,
+                                    subText = sub,
+                                    alternates = k.alternates,
+                                    backgroundColor = letterKeyBg,
+                                    textColor = textColor,
+                                    fontSize = 16.sp,
+                                    modifier = Modifier.weight(1f),
+                                    onAlternateSelected = { alt -> handleKeyPress(alt, isRawChar = true) },
+                                    onClick = { handleKeyPress(keyText, isRawChar = true) }
                                 )
                             }
-                            val rawText = if (shiftState != ShiftState.OFF) letter.uppercase() else letter
-                            val displayText = if (settings.enableStylishFonts && activeFontStyle != StylishFontStyle.NORMAL) {
-                                StylishFontEngine.transformText(rawText, activeFontStyle)
-                            } else {
-                                rawText
-                            }
-                            FlatKeyButton(
-                                text = displayText,
-                                backgroundColor = letterKeyBg,
-                                textColor = textColor,
-                                modifier = Modifier.weight(1f),
-                                onClick = { handleKeyPress(letter) }
-                            )
                         }
-                    }
 
-                    Spacer(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(lineThicknessDp)
-                            .background(gridBorderColor)
-                    )
+                        if (isFlatGrid) {
+                            Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+                        }
 
-                    // Row 2
-                    val row2 = listOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(keyHeight)
-                    ) {
-                        row2.forEachIndexed { index, letter ->
-                            if (index > 0) {
-                                Spacer(
-                                    modifier = Modifier
-                                        .width(lineThicknessDp)
-                                        .fillMaxHeight()
-                                        .background(gridBorderColor)
+                        // Row 2 (9 Keys)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(keyHeight)
+                        ) {
+                            BanglaProbhatLayout.row2.forEachIndexed { index, k ->
+                                if (index > 0 && isFlatGrid) {
+                                    Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+                                }
+                                val keyText = if (shiftState != ShiftState.OFF) k.shifted else k.normal
+                                val sub = if (shiftState == ShiftState.OFF) k.hint else null
+                                FlatKeyButton(
+                                    text = keyText,
+                                    subText = sub,
+                                    alternates = k.alternates,
+                                    backgroundColor = letterKeyBg,
+                                    textColor = textColor,
+                                    fontSize = 17.sp,
+                                    modifier = Modifier.weight(1f),
+                                    onAlternateSelected = { alt -> handleKeyPress(alt, isRawChar = true) },
+                                    onClick = { handleKeyPress(keyText, isRawChar = true) }
                                 )
                             }
-                            val rawText = if (shiftState != ShiftState.OFF) letter.uppercase() else letter
-                            val displayText = if (settings.enableStylishFonts && activeFontStyle != StylishFontStyle.NORMAL) {
-                                StylishFontEngine.transformText(rawText, activeFontStyle)
-                            } else {
-                                rawText
+                        }
+
+                        if (isFlatGrid) {
+                            Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+                        }
+
+                        // Row 3 (Shift + 9 Keys + Backspace)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(keyHeight)
+                        ) {
+                            val shiftBg = when (shiftState) {
+                                ShiftState.OFF -> functionKeyBg
+                                ShiftState.ON -> theme.accentColor
+                                ShiftState.CAPS_LOCK -> theme.accentColor
                             }
-                            FlatKeyButton(
-                                text = displayText,
-                                backgroundColor = letterKeyBg,
-                                textColor = textColor,
-                                modifier = Modifier.weight(1f),
-                                onClick = { handleKeyPress(letter) }
+                            val shiftIconColor = if (shiftState == ShiftState.OFF) functionTextColor else theme.accentTextColor
+                            val shiftBadgeColor = if (shiftState != ShiftState.OFF) (theme.shiftBadgeColor ?: theme.accentColor) else theme.shiftBadgeColor
+
+                            IconKeyButton(
+                                icon = Icons.Default.ArrowUpward,
+                                contentDescription = "Shift",
+                                backgroundColor = shiftBg,
+                                iconColor = shiftIconColor,
+                                pressedColor = keyPressedBg,
+                                badgeColor = shiftBadgeColor,
+                                enableAnimation = settings.enableKeyAnimation,
+                                modifier = Modifier.weight(1.2f),
+                                onClick = {
+                                    triggerFeedback()
+                                    shiftState = when (shiftState) {
+                                        ShiftState.OFF -> ShiftState.ON
+                                        ShiftState.ON -> ShiftState.CAPS_LOCK
+                                        ShiftState.CAPS_LOCK -> ShiftState.OFF
+                                    }
+                                }
                             )
-                        }
-                    }
 
-                    Spacer(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(lineThicknessDp)
-                            .background(gridBorderColor)
-                    )
+                            if (isFlatGrid) {
+                                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+                            }
 
-                    // Row 3
-                    val row3 = listOf("z", "x", "c", "v", "b", "n", "m")
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(keyHeight)
-                    ) {
-                        // Shift Key
-                        val shiftBg = when (shiftState) {
-                            ShiftState.OFF -> functionKeyBg
-                            ShiftState.ON -> theme.accentColor
-                            ShiftState.CAPS_LOCK -> theme.accentColor
-                        }
-                        val shiftIconColor = if (shiftState == ShiftState.OFF) functionTextColor else theme.accentTextColor
-
-                        IconKeyButton(
-                            icon = Icons.Default.ArrowUpward,
-                            contentDescription = "Shift",
-                            backgroundColor = shiftBg,
-                            iconColor = shiftIconColor,
-                            pressedColor = keyPressedBg,
-                            enableAnimation = settings.enableKeyAnimation,
-                            modifier = Modifier.weight(1.5f),
-                            onClick = {
-                                triggerFeedback()
-                                shiftState = when (shiftState) {
-                                    ShiftState.OFF -> ShiftState.ON
-                                    ShiftState.ON -> ShiftState.CAPS_LOCK
-                                    ShiftState.CAPS_LOCK -> ShiftState.OFF
+                            BanglaProbhatLayout.row3.forEach { k ->
+                                val keyText = if (shiftState != ShiftState.OFF) k.shifted else k.normal
+                                val sub = if (shiftState == ShiftState.OFF) k.hint else null
+                                FlatKeyButton(
+                                    text = keyText,
+                                    subText = sub,
+                                    alternates = k.alternates,
+                                    backgroundColor = letterKeyBg,
+                                    textColor = textColor,
+                                    fontSize = 17.sp,
+                                    modifier = Modifier.weight(1f),
+                                    onAlternateSelected = { alt -> handleKeyPress(alt, isRawChar = true) },
+                                    onClick = { handleKeyPress(keyText, isRawChar = true) }
+                                )
+                                if (isFlatGrid) {
+                                    Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
                                 }
                             }
-                        )
 
-                        Spacer(
-                            modifier = Modifier
-                                .width(lineThicknessDp)
-                                .fillMaxHeight()
-                                .background(gridBorderColor)
-                        )
-
-                        row3.forEach { letter ->
-                            val rawText = if (shiftState != ShiftState.OFF) letter.uppercase() else letter
-                            val displayText = if (settings.enableStylishFonts && activeFontStyle != StylishFontStyle.NORMAL) {
-                                StylishFontEngine.transformText(rawText, activeFontStyle)
-                            } else {
-                                rawText
-                            }
-                            FlatKeyButton(
-                                text = displayText,
-                                backgroundColor = letterKeyBg,
-                                textColor = textColor,
-                                modifier = Modifier.weight(1f),
-                                onClick = { handleKeyPress(letter) }
+                            RepeatingBackspaceKey(
+                                backgroundColor = functionKeyBg,
+                                iconColor = functionTextColor,
+                                badgeColor = theme.backspaceBadgeColor,
+                                modifier = Modifier.weight(1.2f),
+                                onDelete = {
+                                    triggerFeedback()
+                                    if (currentComposingWord.isNotEmpty()) {
+                                        currentComposingWord = currentComposingWord.dropLast(1)
+                                    }
+                                    listener?.onDelete()
+                                }
                             )
+                        }
+
+                    } else {
+                        // Standard English / Avro QWERTY Layout
+                        // Row 1
+                        val row1 = listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p")
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(keyHeight)
+                        ) {
+                            row1.forEachIndexed { index, letter ->
+                                if (index > 0 && isFlatGrid) {
+                                    Spacer(
+                                        modifier = Modifier
+                                            .width(lineThicknessDp)
+                                            .fillMaxHeight()
+                                            .background(gridBorderColor)
+                                    )
+                                }
+                                val rawText = if (shiftState != ShiftState.OFF) letter.uppercase() else letter
+                                val displayText = if (settings.enableStylishFonts && activeFontStyle != StylishFontStyle.NORMAL) {
+                                    StylishFontEngine.transformText(rawText, activeFontStyle)
+                                } else {
+                                    rawText
+                                }
+                                FlatKeyButton(
+                                    text = displayText,
+                                    backgroundColor = letterKeyBg,
+                                    textColor = textColor,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { handleKeyPress(letter) }
+                                )
+                            }
+                        }
+
+                        if (isFlatGrid) {
                             Spacer(
                                 modifier = Modifier
-                                    .width(lineThicknessDp)
-                                    .fillMaxHeight()
+                                    .fillMaxWidth()
+                                    .height(lineThicknessDp)
                                     .background(gridBorderColor)
                             )
                         }
 
-                        // Backspace Key
-                        RepeatingBackspaceKey(
-                            backgroundColor = functionKeyBg,
-                            iconColor = functionTextColor,
-                            modifier = Modifier.weight(1.5f),
-                            onDelete = {
-                                triggerFeedback()
-                                if (currentComposingWord.isNotEmpty()) {
-                                    currentComposingWord = currentComposingWord.dropLast(1)
+                        // Row 2
+                        val row2 = listOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(keyHeight)
+                        ) {
+                            row2.forEachIndexed { index, letter ->
+                                if (index > 0 && isFlatGrid) {
+                                    Spacer(
+                                        modifier = Modifier
+                                            .width(lineThicknessDp)
+                                            .fillMaxHeight()
+                                            .background(gridBorderColor)
+                                    )
                                 }
-                                listener?.onDelete()
+                                val rawText = if (shiftState != ShiftState.OFF) letter.uppercase() else letter
+                                val displayText = if (settings.enableStylishFonts && activeFontStyle != StylishFontStyle.NORMAL) {
+                                    StylishFontEngine.transformText(rawText, activeFontStyle)
+                                } else {
+                                    rawText
+                                }
+                                FlatKeyButton(
+                                    text = displayText,
+                                    backgroundColor = letterKeyBg,
+                                    textColor = textColor,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { handleKeyPress(letter) }
+                                )
                             }
-                        )
+                        }
+
+                        if (isFlatGrid) {
+                            Spacer(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(lineThicknessDp)
+                                    .background(gridBorderColor)
+                            )
+                        }
+
+                        // Row 3
+                        val row3 = listOf("z", "x", "c", "v", "b", "n", "m")
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(keyHeight)
+                        ) {
+                            // Shift Key
+                            val shiftBg = when (shiftState) {
+                                ShiftState.OFF -> functionKeyBg
+                                ShiftState.ON -> theme.accentColor
+                                ShiftState.CAPS_LOCK -> theme.accentColor
+                            }
+                            val shiftIconColor = if (shiftState == ShiftState.OFF) functionTextColor else theme.accentTextColor
+                            val shiftBadgeColor = if (shiftState != ShiftState.OFF) (theme.shiftBadgeColor ?: theme.accentColor) else theme.shiftBadgeColor
+
+                            IconKeyButton(
+                                icon = Icons.Default.ArrowUpward,
+                                contentDescription = "Shift",
+                                backgroundColor = shiftBg,
+                                iconColor = shiftIconColor,
+                                pressedColor = keyPressedBg,
+                                badgeColor = shiftBadgeColor,
+                                enableAnimation = settings.enableKeyAnimation,
+                                modifier = Modifier.weight(1.5f),
+                                onClick = {
+                                    triggerFeedback()
+                                    shiftState = when (shiftState) {
+                                        ShiftState.OFF -> ShiftState.ON
+                                        ShiftState.ON -> ShiftState.CAPS_LOCK
+                                        ShiftState.CAPS_LOCK -> ShiftState.OFF
+                                    }
+                                }
+                            )
+
+                            if (isFlatGrid) {
+                                Spacer(
+                                    modifier = Modifier
+                                        .width(lineThicknessDp)
+                                        .fillMaxHeight()
+                                        .background(gridBorderColor)
+                                    )
+                            }
+
+                            row3.forEach { letter ->
+                                val rawText = if (shiftState != ShiftState.OFF) letter.uppercase() else letter
+                                val displayText = if (settings.enableStylishFonts && activeFontStyle != StylishFontStyle.NORMAL) {
+                                    StylishFontEngine.transformText(rawText, activeFontStyle)
+                                } else {
+                                    rawText
+                                }
+                                FlatKeyButton(
+                                    text = displayText,
+                                    backgroundColor = letterKeyBg,
+                                    textColor = textColor,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = { handleKeyPress(letter) }
+                                )
+                                if (isFlatGrid) {
+                                    Spacer(
+                                        modifier = Modifier
+                                            .width(lineThicknessDp)
+                                            .fillMaxHeight()
+                                            .background(gridBorderColor)
+                                    )
+                                }
+                            }
+
+                            // Backspace Key
+                            RepeatingBackspaceKey(
+                                backgroundColor = functionKeyBg,
+                                iconColor = functionTextColor,
+                                badgeColor = theme.backspaceBadgeColor,
+                                modifier = Modifier.weight(1.5f),
+                                onDelete = {
+                                    triggerFeedback()
+                                    if (currentComposingWord.isNotEmpty()) {
+                                        currentComposingWord = currentComposingWord.dropLast(1)
+                                    }
+                                    listener?.onDelete()
+                                }
+                            )
+                        }
                     }
 
                 } else {
@@ -1066,7 +1453,7 @@ fun SingBordKeyboardView(
                             .height(keyHeight)
                     ) {
                         row1Symbols.forEachIndexed { index, sym ->
-                            if (index > 0) {
+                            if (index > 0 && isFlatGrid) {
                                 Spacer(
                                     modifier = Modifier
                                         .width(lineThicknessDp)
@@ -1084,12 +1471,14 @@ fun SingBordKeyboardView(
                         }
                     }
 
-                    Spacer(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(lineThicknessDp)
-                            .background(gridBorderColor)
-                    )
+                    if (isFlatGrid) {
+                        Spacer(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(lineThicknessDp)
+                                .background(gridBorderColor)
+                        )
+                    }
 
                     // Symbol Row 2
                     Row(
@@ -1098,7 +1487,7 @@ fun SingBordKeyboardView(
                             .height(keyHeight)
                     ) {
                         row2Symbols.forEachIndexed { index, sym ->
-                            if (index > 0) {
+                            if (index > 0 && isFlatGrid) {
                                 Spacer(
                                     modifier = Modifier
                                         .width(lineThicknessDp)
@@ -1116,12 +1505,14 @@ fun SingBordKeyboardView(
                         }
                     }
 
-                    Spacer(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(lineThicknessDp)
-                            .background(gridBorderColor)
-                    )
+                    if (isFlatGrid) {
+                        Spacer(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(lineThicknessDp)
+                                .background(gridBorderColor)
+                        )
+                    }
 
                     // Symbol Row 3 (Leading symbol key [1.5f] + 7 symbols [1f each] + Backspace key [1.5f])
                     Row(
@@ -1133,16 +1524,19 @@ fun SingBordKeyboardView(
                             text = row3LeadingKey,
                             backgroundColor = functionKeyBg,
                             textColor = functionTextColor,
+                            isFunctionKey = true,
                             modifier = Modifier.weight(1.5f),
                             onClick = { handleKeyPress(row3LeadingKey) }
                         )
 
-                        Spacer(
-                            modifier = Modifier
-                                .width(lineThicknessDp)
-                                .fillMaxHeight()
-                                .background(gridBorderColor)
-                        )
+                        if (isFlatGrid) {
+                            Spacer(
+                                modifier = Modifier
+                                    .width(lineThicknessDp)
+                                    .fillMaxHeight()
+                                    .background(gridBorderColor)
+                            )
+                        }
 
                         row3MiddleSymbols.forEach { sym ->
                             FlatKeyButton(
@@ -1152,17 +1546,20 @@ fun SingBordKeyboardView(
                                 modifier = Modifier.weight(1f),
                                 onClick = { handleKeyPress(sym) }
                             )
-                            Spacer(
-                                modifier = Modifier
-                                    .width(lineThicknessDp)
-                                    .fillMaxHeight()
-                                    .background(gridBorderColor)
-                            )
+                            if (isFlatGrid) {
+                                Spacer(
+                                    modifier = Modifier
+                                        .width(lineThicknessDp)
+                                        .fillMaxHeight()
+                                        .background(gridBorderColor)
+                                )
+                            }
                         }
 
                         RepeatingBackspaceKey(
                             backgroundColor = functionKeyBg,
                             iconColor = functionTextColor,
+                            badgeColor = theme.backspaceBadgeColor,
                             modifier = Modifier.weight(1.5f),
                             onDelete = {
                                 triggerFeedback()
@@ -1175,12 +1572,14 @@ fun SingBordKeyboardView(
                     }
                 }
 
-                Spacer(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(lineThicknessDp)
-                        .background(gridBorderColor)
-                )
+                if (isFlatGrid) {
+                    Spacer(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(lineThicknessDp)
+                            .background(gridBorderColor)
+                    )
+                }
 
                 // Row 4: Bottom Action Row
                 Row(
@@ -1201,7 +1600,9 @@ fun SingBordKeyboardView(
                         backgroundColor = functionKeyBg,
                         textColor = functionTextColor,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1.3f),
+                        isFunctionKey = true,
+                        badgeColor = theme.modeBadgeColor,
+                        modifier = Modifier.weight(1.2f),
                         onClick = {
                             triggerFeedback()
                             keyboardMode = if (keyboardMode == KeyboardMode.ALPHA) {
@@ -1212,12 +1613,14 @@ fun SingBordKeyboardView(
                         }
                     )
 
-                    Spacer(
-                        modifier = Modifier
-                            .width(lineThicknessDp)
-                            .fillMaxHeight()
-                            .background(gridBorderColor)
-                    )
+                    if (isFlatGrid) {
+                        Spacer(
+                            modifier = Modifier
+                                .width(lineThicknessDp)
+                                .fillMaxHeight()
+                                .background(gridBorderColor)
+                        )
+                    }
 
                     // Secondary symbol switch key when in symbol mode
                     if (keyboardMode == KeyboardMode.NUMERIC_SYMBOLS || keyboardMode == KeyboardMode.ALT_SYMBOLS) {
@@ -1227,6 +1630,8 @@ fun SingBordKeyboardView(
                             backgroundColor = functionKeyBg,
                             textColor = functionTextColor,
                             fontWeight = FontWeight.Bold,
+                            isFunctionKey = true,
+                            badgeColor = theme.modeBadgeColor,
                             modifier = Modifier.weight(1f),
                             onClick = {
                                 triggerFeedback()
@@ -1237,12 +1642,43 @@ fun SingBordKeyboardView(
                                 }
                             }
                         )
-                        Spacer(
-                            modifier = Modifier
-                                .width(lineThicknessDp)
-                                .fillMaxHeight()
-                                .background(gridBorderColor)
+                        if (isFlatGrid) {
+                            Spacer(
+                                modifier = Modifier
+                                    .width(lineThicknessDp)
+                                    .fillMaxHeight()
+                                    .background(gridBorderColor)
+                            )
+                        }
+                    }
+
+                    // Language / Globe Key (dedicated language switch icon under the keyboard)
+                    val showLanguageSwitchKey = (settings.showLanguageSwitchKey || theme.showLanguageGlobeKey) && keyboardMode == KeyboardMode.ALPHA
+                    if (showLanguageSwitchKey) {
+                        IconKeyButton(
+                            icon = Icons.Default.Language,
+                            contentDescription = "Switch Language (${currentLanguage.label})",
+                            backgroundColor = functionKeyBg,
+                            iconColor = functionTextColor,
+                            isFunctionKey = true,
+                            modifier = Modifier.weight(0.9f),
+                            onLongClick = {
+                                triggerFeedback()
+                                cycleLanguage()
+                            },
+                            onClick = {
+                                triggerFeedback()
+                                cycleLanguage()
+                            }
                         )
+                        if (isFlatGrid) {
+                            Spacer(
+                                modifier = Modifier
+                                    .width(lineThicknessDp)
+                                    .fillMaxHeight()
+                                    .background(gridBorderColor)
+                            )
+                        }
                     }
 
                     // Emoji Button (if enabled in settings)
@@ -1252,7 +1688,8 @@ fun SingBordKeyboardView(
                             contentDescription = "Emoji",
                             backgroundColor = functionKeyBg,
                             iconColor = functionTextColor,
-                            modifier = Modifier.weight(1.0f),
+                            isFunctionKey = true,
+                            modifier = Modifier.weight(0.9f),
                             onClick = {
                                 triggerFeedback()
                                 if (recentEmojis.isNotEmpty()) {
@@ -1264,39 +1701,55 @@ fun SingBordKeyboardView(
                             }
                         )
 
-                        Spacer(
-                            modifier = Modifier
-                                .width(lineThicknessDp)
-                                .fillMaxHeight()
-                                .background(gridBorderColor)
-                        )
+                        if (isFlatGrid) {
+                            Spacer(
+                                modifier = Modifier
+                                    .width(lineThicknessDp)
+                                    .fillMaxHeight()
+                                    .background(gridBorderColor)
+                            )
+                        }
                     }
 
                     // Comma (in Alpha mode)
                     if (keyboardMode == KeyboardMode.ALPHA) {
+                        val isProbhat = currentLanguage == KeyboardLanguage.BANGLA_PROBHAT
                         FlatKeyButton(
                             text = ",",
+                            alternates = if (isProbhat) BanglaProbhatLayout.commaAlternates else emptyList(),
                             backgroundColor = functionKeyBg,
                             textColor = functionTextColor,
-                            modifier = Modifier.weight(0.9f),
-                            onClick = { handleKeyPress(",") }
+                            isFunctionKey = true,
+                            modifier = Modifier.weight(0.8f),
+                            onAlternateSelected = { alt -> handleKeyPress(alt, isRawChar = true) },
+                            onClick = { handleKeyPress(",", isRawChar = isProbhat) }
                         )
 
-                        Spacer(
-                            modifier = Modifier
-                                .width(lineThicknessDp)
-                                .fillMaxHeight()
-                                .background(gridBorderColor)
-                        )
+                        if (isFlatGrid) {
+                            Spacer(
+                                modifier = Modifier
+                                    .width(lineThicknessDp)
+                                    .fillMaxHeight()
+                                    .background(gridBorderColor)
+                            )
+                        }
                     }
 
                     // Spacebar
                     SpacebarKey(
                         backgroundColor = letterKeyBg,
+                        currentLanguage = currentLanguage,
                         pressedColor = keyPressedBg,
                         dragColor = accentColor.copy(alpha = 0.35f),
-                        enableGestures = settings.enableGestures,
-                        modifier = Modifier.weight(if (settings.enableEmoji) 3.5f else 4.5f),
+                        enableGestures = settings.enableSpacebarCursor && settings.enableGestures,
+                        modifier = Modifier.weight(
+                            when {
+                                keyboardMode != KeyboardMode.ALPHA -> 4.2f
+                                showLanguageSwitchKey && settings.enableEmoji -> 3.2f
+                                showLanguageSwitchKey || settings.enableEmoji -> 3.8f
+                                else -> 4.5f
+                            }
+                        ),
                         onSpace = {
                             if (currentComposingWord.isNotBlank()) {
                                 maybeLearnWord(currentComposingWord)
@@ -1315,44 +1768,67 @@ fun SingBordKeyboardView(
                             currentComposingWord = ""
                             listener?.onMoveCursor(dir)
                         },
+                        onLanguageToggle = {
+                            cycleLanguage()
+                        },
                         triggerFeedback = { triggerFeedback() }
                     )
 
-                    Spacer(
-                        modifier = Modifier
-                            .width(lineThicknessDp)
-                            .fillMaxHeight()
-                            .background(gridBorderColor)
-                    )
+                    if (isFlatGrid) {
+                        Spacer(
+                            modifier = Modifier
+                                .width(lineThicknessDp)
+                                .fillMaxHeight()
+                                .background(gridBorderColor)
+                        )
+                    }
 
-                    // Period
+                    // Period / Daari Key
+                    val isProbhatPeriod = keyboardMode == KeyboardMode.ALPHA && currentLanguage == KeyboardLanguage.BANGLA_PROBHAT
                     FlatKeyButton(
-                        text = ".",
+                        text = if (isProbhatPeriod) "।" else ".",
+                        subText = if (isProbhatPeriod) "." else null,
+                        alternates = if (isProbhatPeriod) BanglaProbhatLayout.dariAlternates else emptyList(),
                         backgroundColor = functionKeyBg,
                         textColor = functionTextColor,
-                        modifier = Modifier.weight(0.9f),
+                        isFunctionKey = true,
+                        modifier = Modifier.weight(0.8f),
+                        onAlternateSelected = { alt ->
+                            if (currentComposingWord.isNotBlank()) {
+                                maybeLearnWord(currentComposingWord)
+                            }
+                            currentComposingWord = ""
+                            handleKeyPress(alt, isRawChar = true)
+                        },
                         onClick = {
                             if (currentComposingWord.isNotBlank()) {
                                 maybeLearnWord(currentComposingWord)
                             }
                             currentComposingWord = ""
-                            handleKeyPress(".")
+                            if (isProbhatPeriod) {
+                                handleKeyPress("।", isRawChar = true)
+                            } else {
+                                handleKeyPress(".")
+                            }
                         }
                     )
 
-                    Spacer(
-                        modifier = Modifier
-                            .width(lineThicknessDp)
-                            .fillMaxHeight()
-                            .background(gridBorderColor)
-                    )
+                    if (isFlatGrid) {
+                        Spacer(
+                            modifier = Modifier
+                                .width(lineThicknessDp)
+                                .fillMaxHeight()
+                                .background(gridBorderColor)
+                        )
+                    }
 
                     // Enter Key
                     EnterKeyButton(
                         editorInfo = editorInfo,
                         accentColor = accentColor,
                         accentTextColor = accentTextColor,
-                        modifier = Modifier.weight(1.4f),
+                        badgeColor = theme.enterBadgeColor,
+                        modifier = Modifier.weight(1.3f),
                         onClick = {
                             triggerFeedback()
                             if (currentComposingWord.isNotBlank()) {
@@ -1367,6 +1843,107 @@ fun SingBordKeyboardView(
         }
     }
 }
+}
+
+@Composable
+fun KeyCapsule(
+    modifier: Modifier = Modifier,
+    isPressed: Boolean = false,
+    isFunctionKey: Boolean = false,
+    customBg: Color? = null,
+    badgeColor: Color? = null,
+    badgeShape: Shape = CircleShape,
+    badgeContent: (@Composable () -> Unit)? = null,
+    theme: KeyboardThemePalette = LocalKeyboardTheme.current,
+    content: @Composable BoxScope.() -> Unit
+) {
+    if (theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID) {
+        Box(
+            modifier = modifier
+                .fillMaxHeight()
+                .background(customBg ?: if (isFunctionKey) theme.functionKeyBg else theme.keyBg),
+            contentAlignment = Alignment.Center
+        ) {
+            content()
+        }
+    } else {
+        val isGlass = theme.keyShapeStyle == KeyboardKeyShapeStyle.GLASSMORPHIC_3D
+        val cornerRadius = theme.keyCornerRadiusDp.dp
+        val shape = RoundedCornerShape(cornerRadius)
+        val hGap = (theme.keyHorizontalGapDp / 2).dp
+        val vGap = (theme.keyVerticalGapDp / 2).dp
+
+        val baseColor = customBg ?: if (isFunctionKey) theme.functionKeyBg else theme.keyBg
+
+        val keyBrush = if (isGlass) {
+            val topColor = if (isFunctionKey) (theme.functionKeyGradientTop ?: baseColor) else (theme.keyGradientTop ?: baseColor)
+            val btmColor = if (isFunctionKey) (theme.functionKeyGradientBottom ?: baseColor) else (theme.keyGradientBottom ?: baseColor)
+            Brush.verticalGradient(listOf(topColor, btmColor))
+        } else null
+
+        val borderStroke = if (isGlass && theme.keyBorderWidthDp > 0f) {
+            BorderStroke(
+                width = theme.keyBorderWidthDp.dp,
+                brush = Brush.verticalGradient(
+                    listOf(
+                        theme.keyBorderColor,
+                        theme.keyBorderColor.copy(alpha = (theme.keyBorderColor.alpha * 0.25f).coerceAtLeast(0.04f))
+                    )
+                )
+            )
+        } else null
+
+        Box(
+            modifier = modifier
+                .fillMaxHeight()
+                .padding(horizontal = hGap, vertical = vGap)
+        ) {
+            // 3D Bottom Lip Depth Shadow
+            if (theme.keyElevationDp > 0f) {
+                val shadowOffsetY = if (isPressed) (theme.keyElevationDp * 0.35f).dp else theme.keyElevationDp.dp
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .offset(y = shadowOffsetY)
+                        .clip(shape)
+                        .background(theme.keyShadowColor)
+                )
+            }
+
+            // Keycap Body
+            val pressOffsetY = if (isPressed && theme.keyElevationDp > 0f) (theme.keyElevationDp * 0.65f).dp else 0.dp
+            val activeBrush = if (isPressed && isGlass) {
+                Brush.verticalGradient(listOf(theme.accentColor, theme.accentColor.copy(alpha = 0.85f)))
+            } else keyBrush
+
+            val activeBaseColor = if (isPressed) theme.accentColor else baseColor
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .offset(y = pressOffsetY)
+                    .clip(shape)
+                    .then(if (activeBrush != null) Modifier.background(activeBrush) else Modifier.background(activeBaseColor))
+                    .then(if (borderStroke != null) Modifier.border(borderStroke, shape) else Modifier),
+                contentAlignment = Alignment.Center
+            ) {
+                if (badgeColor != null && badgeContent != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize(0.78f)
+                            .clip(badgeShape)
+                            .background(badgeColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        badgeContent()
+                    }
+                } else {
+                    content()
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun FlatKeyButton(
@@ -1374,18 +1951,30 @@ fun FlatKeyButton(
     backgroundColor: Color,
     textColor: Color,
     modifier: Modifier = Modifier,
+    subText: String? = null,
+    alternates: List<String> = emptyList(),
     pressedColor: Color? = null,
-    fontWeight: FontWeight = FontWeight.SemiBold,
+    fontWeight: FontWeight? = null,
     fontSize: TextUnit = 18.sp,
     enableAnimation: Boolean = true,
+    isFunctionKey: Boolean = false,
+    badgeColor: Color? = null,
+    badgeShape: Shape = CircleShape,
+    onAlternateSelected: ((String) -> Unit)? = null,
     onClick: () -> Unit
 ) {
+    val theme = LocalKeyboardTheme.current
     var isPressed by remember { mutableStateOf(false) }
+    var showAlternates by remember { mutableStateOf(false) }
     var touchOffset by remember { mutableStateOf(Offset.Zero) }
     var keySize by remember { mutableStateOf(IntSize.Zero) }
 
+    val resolvedFontWeight = fontWeight ?: theme.keyTextFontWeight
+
     val scale by animateFloatAsState(
-        targetValue = if (enableAnimation && isPressed) 0.88f else 1.0f,
+        targetValue = if (enableAnimation && isPressed) {
+            if (theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID) 0.88f else 0.94f
+        } else 1.0f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMediumLow
@@ -1404,12 +1993,10 @@ fun FlatKeyButton(
         if (luminance < 0.5f) Color.White.copy(alpha = 0.22f) else Color.Black.copy(alpha = 0.14f)
     }
 
-    Box(
+    KeyCapsule(
         modifier = modifier
-            .fillMaxHeight()
             .onSizeChanged { keySize = it }
-            .background(backgroundColor)
-            .pointerInput(Unit) {
+            .pointerInput(alternates) {
                 detectTapGestures(
                     onPress = { offset ->
                         touchOffset = offset
@@ -1417,12 +2004,34 @@ fun FlatKeyButton(
                         tryAwaitRelease()
                         isPressed = false
                     },
+                    onLongPress = {
+                        if (alternates.isNotEmpty()) {
+                            showAlternates = true
+                        }
+                    },
                     onTap = { onClick() }
                 )
             },
-        contentAlignment = Alignment.Center
+        isPressed = isPressed,
+        isFunctionKey = isFunctionKey,
+        customBg = backgroundColor,
+        badgeColor = badgeColor,
+        badgeShape = badgeShape,
+        badgeContent = if (badgeColor != null) {
+            {
+                Text(
+                    text = text,
+                    color = Color.White,
+                    fontSize = fontSize,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.graphicsLayer(scaleX = scale, scaleY = scale)
+                )
+            }
+        } else null,
+        theme = theme
     ) {
-        if (overlayAlpha > 0.01f) {
+        if (overlayAlpha > 0.01f && theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID) {
             val radius = maxOf(keySize.width.toFloat(), keySize.height.toFloat(), 100f) * 1.2f
             Box(
                 modifier = Modifier
@@ -1441,17 +2050,82 @@ fun FlatKeyButton(
             )
         }
 
-        Text(
-            text = text,
-            color = textColor,
-            fontSize = fontSize,
-            fontWeight = fontWeight,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.graphicsLayer(
-                scaleX = scale,
-                scaleY = scale
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!subText.isNullOrBlank()) {
+                Text(
+                    text = subText,
+                    color = textColor.copy(alpha = 0.50f),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Normal,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(end = 4.dp, top = 2.dp)
+                )
+            }
+
+            Text(
+                text = text,
+                color = textColor,
+                fontSize = fontSize,
+                fontWeight = resolvedFontWeight,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale
+                )
             )
-        )
+        }
+
+        if (showAlternates && alternates.isNotEmpty()) {
+            Popup(
+                alignment = Alignment.TopCenter,
+                offset = IntOffset(0, -115),
+                onDismissRequest = { showAlternates = false }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .padding(4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(theme.keyboardBg)
+                        .border(1.dp, theme.accentColor.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        alternates.forEach { alt ->
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (alt == text) theme.accentColor.copy(alpha = 0.25f) else theme.keyBg)
+                                    .clickable {
+                                        showAlternates = false
+                                        if (onAlternateSelected != null) {
+                                            onAlternateSelected(alt)
+                                        } else {
+                                            onClick()
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = alt,
+                                    fontSize = 17.sp,
+                                    color = theme.keyTextColor,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1464,14 +2138,21 @@ fun IconKeyButton(
     modifier: Modifier = Modifier,
     pressedColor: Color? = null,
     enableAnimation: Boolean = true,
+    isFunctionKey: Boolean = true,
+    badgeColor: Color? = null,
+    badgeShape: Shape = CircleShape,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
+    val theme = LocalKeyboardTheme.current
     var isPressed by remember { mutableStateOf(false) }
     var touchOffset by remember { mutableStateOf(Offset.Zero) }
     var keySize by remember { mutableStateOf(IntSize.Zero) }
 
     val scale by animateFloatAsState(
-        targetValue = if (enableAnimation && isPressed) 0.88f else 1.0f,
+        targetValue = if (enableAnimation && isPressed) {
+            if (theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID) 0.88f else 0.92f
+        } else 1.0f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMediumLow
@@ -1490,11 +2171,9 @@ fun IconKeyButton(
         if (luminance < 0.5f) Color.White.copy(alpha = 0.22f) else Color.Black.copy(alpha = 0.14f)
     }
 
-    Box(
+    KeyCapsule(
         modifier = modifier
-            .fillMaxHeight()
             .onSizeChanged { keySize = it }
-            .background(backgroundColor)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = { offset ->
@@ -1503,12 +2182,34 @@ fun IconKeyButton(
                         tryAwaitRelease()
                         isPressed = false
                     },
+                    onLongPress = {
+                        if (onLongClick != null) {
+                            onLongClick()
+                        }
+                    },
                     onTap = { onClick() }
                 )
             },
-        contentAlignment = Alignment.Center
+        isPressed = isPressed,
+        isFunctionKey = isFunctionKey,
+        customBg = backgroundColor,
+        badgeColor = badgeColor,
+        badgeShape = badgeShape,
+        badgeContent = if (badgeColor != null) {
+            {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = contentDescription,
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .graphicsLayer(scaleX = scale, scaleY = scale)
+                )
+            }
+        } else null,
+        theme = theme
     ) {
-        if (overlayAlpha > 0.01f) {
+        if (overlayAlpha > 0.01f && theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID) {
             val radius = maxOf(keySize.width.toFloat(), keySize.height.toFloat(), 100f) * 1.2f
             Box(
                 modifier = Modifier
@@ -1548,8 +2249,10 @@ fun EnterKeyButton(
     accentTextColor: Color = Color.White,
     modifier: Modifier = Modifier,
     enableAnimation: Boolean = true,
+    badgeColor: Color? = null,
     onClick: () -> Unit
 ) {
+    val theme = LocalKeyboardTheme.current
     val actionId = editorInfo?.let { info ->
         val id = info.actionId
         if (id != EditorInfo.IME_ACTION_UNSPECIFIED && id != EditorInfo.IME_ACTION_NONE) id
@@ -1570,7 +2273,9 @@ fun EnterKeyButton(
     var keySize by remember { mutableStateOf(IntSize.Zero) }
 
     val scale by animateFloatAsState(
-        targetValue = if (enableAnimation && isPressed) 0.88f else 1.0f,
+        targetValue = if (enableAnimation && isPressed) {
+            if (theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID) 0.88f else 0.92f
+        } else 1.0f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMediumLow
@@ -1584,11 +2289,11 @@ fun EnterKeyButton(
         label = "enter_key_overlay"
     )
 
-    Box(
+    val activeBadgeColor = badgeColor ?: theme.enterBadgeColor
+
+    KeyCapsule(
         modifier = modifier
-            .fillMaxHeight()
             .onSizeChanged { keySize = it }
-            .background(accentColor)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = { offset ->
@@ -1600,9 +2305,26 @@ fun EnterKeyButton(
                     onTap = { onClick() }
                 )
             },
-        contentAlignment = Alignment.Center
+        isPressed = isPressed,
+        isFunctionKey = true,
+        customBg = accentColor,
+        badgeColor = activeBadgeColor,
+        badgeShape = RoundedCornerShape(12.dp),
+        badgeContent = if (activeBadgeColor != null) {
+            {
+                Icon(
+                    imageVector = enterIcon,
+                    contentDescription = enterDescription,
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .graphicsLayer(scaleX = scale, scaleY = scale)
+                )
+            }
+        } else null,
+        theme = theme
     ) {
-        if (overlayAlpha > 0.01f) {
+        if (overlayAlpha > 0.01f && theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID) {
             val radius = maxOf(keySize.width.toFloat(), keySize.height.toFloat(), 100f) * 1.2f
             Box(
                 modifier = Modifier
@@ -1642,15 +2364,19 @@ fun RepeatingBackspaceKey(
     modifier: Modifier = Modifier,
     pressedColor: Color? = null,
     enableAnimation: Boolean = true,
+    badgeColor: Color? = null,
     onDelete: () -> Unit
 ) {
+    val theme = LocalKeyboardTheme.current
     var isPressed by remember { mutableStateOf(false) }
     var touchOffset by remember { mutableStateOf(Offset.Zero) }
     var keySize by remember { mutableStateOf(IntSize.Zero) }
     val coroutineScope = rememberCoroutineScope()
 
     val scale by animateFloatAsState(
-        targetValue = if (enableAnimation && isPressed) 0.88f else 1.0f,
+        targetValue = if (enableAnimation && isPressed) {
+            if (theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID) 0.88f else 0.92f
+        } else 1.0f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMediumLow
@@ -1669,11 +2395,11 @@ fun RepeatingBackspaceKey(
         if (luminance < 0.5f) Color.White.copy(alpha = 0.22f) else Color.Black.copy(alpha = 0.14f)
     }
 
-    Box(
+    val activeBadgeColor = badgeColor ?: theme.backspaceBadgeColor
+
+    KeyCapsule(
         modifier = modifier
-            .fillMaxHeight()
             .onSizeChanged { keySize = it }
-            .background(backgroundColor)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onPress = { offset ->
@@ -1693,9 +2419,26 @@ fun RepeatingBackspaceKey(
                     }
                 )
             },
-        contentAlignment = Alignment.Center
+        isPressed = isPressed,
+        isFunctionKey = true,
+        customBg = backgroundColor,
+        badgeColor = activeBadgeColor,
+        badgeShape = CircleShape,
+        badgeContent = if (activeBadgeColor != null) {
+            {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Backspace,
+                    contentDescription = "Delete",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(17.dp)
+                        .graphicsLayer(scaleX = scale, scaleY = scale)
+                )
+            }
+        } else null,
+        theme = theme
     ) {
-        if (overlayAlpha > 0.01f) {
+        if (overlayAlpha > 0.01f && theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID) {
             val radius = maxOf(keySize.width.toFloat(), keySize.height.toFloat(), 100f) * 1.2f
             Box(
                 modifier = Modifier
@@ -1731,6 +2474,7 @@ fun RepeatingBackspaceKey(
 @Composable
 fun SpacebarKey(
     backgroundColor: Color,
+    currentLanguage: KeyboardLanguage = KeyboardLanguage.BANGLA_PROBHAT,
     pressedColor: Color = Color(0xFFE2E8F0),
     dragColor: Color = Color(0xFFCBD5E1),
     enableGestures: Boolean = true,
@@ -1739,8 +2483,10 @@ fun SpacebarKey(
     onSpace: () -> Unit,
     onDoubleSpacePeriod: () -> Unit,
     onMoveCursor: (Int) -> Unit,
+    onLanguageToggle: (() -> Unit)? = null,
     triggerFeedback: () -> Unit
 ) {
+    val theme = LocalKeyboardTheme.current
     var isPressed by remember { mutableStateOf(false) }
     var isDragging by remember { mutableStateOf(false) }
     var lastTapTime by remember { mutableStateOf(0L) }
@@ -1750,7 +2496,9 @@ fun SpacebarKey(
     val stepThresholdPx = with(density) { 16.dp.toPx() }
 
     val scale by animateFloatAsState(
-        targetValue = if (enableAnimation && isPressed && !isDragging) 0.94f else 1.0f,
+        targetValue = if (enableAnimation && isPressed && !isDragging) {
+            if (theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID) 0.94f else 0.98f
+        } else 1.0f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMediumLow
@@ -1770,11 +2518,9 @@ fun SpacebarKey(
         else -> backgroundColor
     }
 
-    Box(
+    KeyCapsule(
         modifier = modifier
-            .fillMaxHeight()
             .onSizeChanged { keySize = it }
-            .background(currentBg)
             .pointerInput(enableGestures) {
                 if (!enableGestures) {
                     detectTapGestures(
@@ -1783,6 +2529,10 @@ fun SpacebarKey(
                             isPressed = true
                             tryAwaitRelease()
                             isPressed = false
+                        },
+                        onLongPress = {
+                            triggerFeedback()
+                            onLanguageToggle?.invoke()
                         },
                         onTap = {
                             triggerFeedback()
@@ -1847,9 +2597,12 @@ fun SpacebarKey(
                     }
                 }
             },
-        contentAlignment = Alignment.Center
+        isPressed = isPressed,
+        isFunctionKey = false,
+        customBg = currentBg,
+        theme = theme
     ) {
-        if (overlayAlpha > 0.01f) {
+        if (overlayAlpha > 0.01f && theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID) {
             val radius = maxOf(keySize.width.toFloat(), keySize.height.toFloat(), 100f) * 1.2f
             Box(
                 modifier = Modifier
@@ -1868,16 +2621,37 @@ fun SpacebarKey(
             )
         }
 
-        Text(
-            text = if (enableGestures && isDragging) "‹ ── Slide cursor ── ›" else "SingBord",
-            fontSize = if (isDragging) 11.sp else 12.sp,
-            color = if (isDragging) Color(0xFF1E293B) else Color(0xFF94A3B8),
-            fontWeight = if (isDragging) FontWeight.SemiBold else FontWeight.Normal,
+        val spaceDisplayText = when {
+            enableGestures && isDragging -> "‹ ── Slide cursor ── ›"
+            theme.spaceBarLabel.isNotBlank() -> theme.spaceBarLabel
+            else -> "◀  ${currentLanguage.spacebarLabel}  ▶"
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
             modifier = Modifier.graphicsLayer(
                 scaleX = scale,
                 scaleY = scale
             )
-        )
+        ) {
+            if (theme.showSpaceVoiceGlyph && !isDragging) {
+                Icon(
+                    imageVector = Icons.Default.Mic,
+                    contentDescription = null,
+                    tint = theme.functionTextColor.copy(alpha = 0.55f),
+                    modifier = Modifier
+                        .size(15.dp)
+                        .padding(end = 4.dp)
+                )
+            }
+            Text(
+                text = spaceDisplayText,
+                fontSize = if (isDragging) 11.sp else 13.sp,
+                color = if (isDragging) theme.accentColor else theme.functionTextColor.copy(alpha = 0.75f),
+                fontWeight = if (isDragging) FontWeight.SemiBold else FontWeight.Normal
+            )
+        }
     }
 }
 
@@ -1889,18 +2663,34 @@ fun ToolIconItem(
     isActive: Boolean,
     onClick: () -> Unit
 ) {
+    val isGlass = theme.keyShapeStyle == KeyboardKeyShapeStyle.GLASSMORPHIC_3D
+    val isElevated = theme.keyShapeStyle == KeyboardKeyShapeStyle.ROUNDED_ELEVATED
+    val isModern = isGlass || isElevated
+    val itemShape = RoundedCornerShape(if (isModern) 8.dp else 16.dp)
+
     Box(
         modifier = Modifier
-            .size(34.dp)
-            .clip(CircleShape)
-            .background(if (isActive) theme.accentColor else theme.candidateBg)
+            .size(33.dp)
+            .clip(itemShape)
+            .then(
+                when {
+                    isActive -> Modifier.background(theme.accentColor)
+                    isModern -> Modifier
+                        .background(theme.functionKeyBg.copy(alpha = if (theme.isDark) 0.65f else 0.85f))
+                        .then(
+                            if (theme.keyBorderWidthDp > 0f) Modifier.border(0.7.dp, theme.keyBorderColor.copy(alpha = 0.5f), itemShape)
+                            else Modifier
+                        )
+                    else -> Modifier.background(theme.candidateBg)
+                }
+            )
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = if (isActive) theme.accentTextColor else theme.keyTextColor,
+            tint = if (isActive) theme.accentTextColor else theme.functionTextColor,
             modifier = Modifier.size(19.dp)
         )
     }
@@ -1917,6 +2707,7 @@ fun TextEditorSubPanel(
     triggerFeedback: () -> Unit
 ) {
     var selectMode by remember { mutableStateOf(false) }
+    val isFlatGrid = theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID
 
     Column(
         modifier = Modifier
@@ -1936,45 +2727,56 @@ fun TextEditorSubPanel(
                 backgroundColor = theme.functionKeyBg,
                 textColor = theme.functionTextColor,
                 fontWeight = FontWeight.SemiBold,
+                isFunctionKey = true,
                 modifier = Modifier.weight(1.2f),
                 onClick = {
                     triggerFeedback()
                     listener?.onSelectAll()
                 }
             )
-            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            if (isFlatGrid) {
+                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            }
             FlatKeyButton(
                 text = "Cut",
                 fontSize = 12.sp,
                 backgroundColor = theme.functionKeyBg,
                 textColor = theme.functionTextColor,
                 fontWeight = FontWeight.SemiBold,
+                isFunctionKey = true,
                 modifier = Modifier.weight(1f),
                 onClick = {
                     triggerFeedback()
                     listener?.onCut()
                 }
             )
-            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            if (isFlatGrid) {
+                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            }
             FlatKeyButton(
                 text = "Copy",
                 fontSize = 12.sp,
                 backgroundColor = theme.functionKeyBg,
                 textColor = theme.functionTextColor,
                 fontWeight = FontWeight.SemiBold,
+                isFunctionKey = true,
                 modifier = Modifier.weight(1f),
                 onClick = {
                     triggerFeedback()
                     listener?.onCopy()
                 }
             )
-            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            if (isFlatGrid) {
+                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            }
             FlatKeyButton(
                 text = "Paste",
                 fontSize = 12.sp,
                 backgroundColor = theme.accentColor,
                 textColor = theme.accentTextColor,
                 fontWeight = FontWeight.Bold,
+                isFunctionKey = true,
+                badgeColor = theme.enterBadgeColor,
                 modifier = Modifier.weight(1.1f),
                 onClick = {
                     triggerFeedback()
@@ -1983,7 +2785,11 @@ fun TextEditorSubPanel(
             )
         }
 
-        Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        if (isFlatGrid) {
+            Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        } else {
+            Spacer(modifier = Modifier.height(2.dp))
+        }
 
         // D-Pad Row 1: Home, UP Arrow, End
         Row(
@@ -1997,13 +2803,16 @@ fun TextEditorSubPanel(
                 backgroundColor = theme.functionKeyBg,
                 textColor = theme.functionTextColor,
                 fontWeight = FontWeight.SemiBold,
+                isFunctionKey = true,
                 modifier = Modifier.weight(1.2f),
                 onClick = {
                     triggerFeedback()
                     listener?.onMoveToStart()
                 }
             )
-            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            if (isFlatGrid) {
+                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            }
             FlatKeyButton(
                 text = "▲",
                 fontSize = 18.sp,
@@ -2020,13 +2829,16 @@ fun TextEditorSubPanel(
                     }
                 }
             )
-            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            if (isFlatGrid) {
+                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            }
             FlatKeyButton(
                 text = "End ⇥",
                 fontSize = 13.sp,
                 backgroundColor = theme.functionKeyBg,
                 textColor = theme.functionTextColor,
                 fontWeight = FontWeight.SemiBold,
+                isFunctionKey = true,
                 modifier = Modifier.weight(1.2f),
                 onClick = {
                     triggerFeedback()
@@ -2035,7 +2847,11 @@ fun TextEditorSubPanel(
             )
         }
 
-        Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        if (isFlatGrid) {
+            Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        } else {
+            Spacer(modifier = Modifier.height(2.dp))
+        }
 
         // D-Pad Row 2: LEFT Arrow, SELECT TOGGLE, RIGHT Arrow
         Row(
@@ -2059,20 +2875,25 @@ fun TextEditorSubPanel(
                     }
                 }
             )
-            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            if (isFlatGrid) {
+                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            }
             FlatKeyButton(
                 text = if (selectMode) "Select: ON" else "Select: OFF",
                 fontSize = 13.sp,
                 backgroundColor = if (selectMode) theme.accentColor else theme.functionKeyBg,
                 textColor = if (selectMode) theme.accentTextColor else theme.functionTextColor,
                 fontWeight = FontWeight.Bold,
+                isFunctionKey = true,
                 modifier = Modifier.weight(1.6f),
                 onClick = {
                     triggerFeedback()
                     selectMode = !selectMode
                 }
             )
-            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            if (isFlatGrid) {
+                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            }
             FlatKeyButton(
                 text = "▶",
                 fontSize = 18.sp,
@@ -2091,7 +2912,11 @@ fun TextEditorSubPanel(
             )
         }
 
-        Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        if (isFlatGrid) {
+            Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        } else {
+            Spacer(modifier = Modifier.height(2.dp))
+        }
 
         // D-Pad Row 3: Return to Keyboard, DOWN Arrow, Backspace
         Row(
@@ -2102,16 +2927,20 @@ fun TextEditorSubPanel(
             FlatKeyButton(
                 text = "ABC",
                 fontSize = 13.sp,
-                backgroundColor = theme.accentColor,
-                textColor = theme.accentTextColor,
+                backgroundColor = theme.functionKeyBg,
+                textColor = theme.functionTextColor,
                 fontWeight = FontWeight.Bold,
+                isFunctionKey = true,
+                badgeColor = theme.modeBadgeColor,
                 modifier = Modifier.weight(1.2f),
                 onClick = {
                     triggerFeedback()
                     onClose()
                 }
             )
-            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            if (isFlatGrid) {
+                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            }
             FlatKeyButton(
                 text = "▼",
                 fontSize = 18.sp,
@@ -2128,13 +2957,17 @@ fun TextEditorSubPanel(
                     }
                 }
             )
-            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            if (isFlatGrid) {
+                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            }
             FlatKeyButton(
                 text = "⌫",
                 fontSize = 16.sp,
                 backgroundColor = theme.functionKeyBg,
                 textColor = theme.functionTextColor,
                 fontWeight = FontWeight.Bold,
+                isFunctionKey = true,
+                badgeColor = theme.backspaceBadgeColor,
                 modifier = Modifier.weight(1.2f),
                 onClick = {
                     triggerFeedback()
@@ -2157,6 +2990,10 @@ fun ClipboardSubPanel(
     onClose: () -> Unit,
     triggerFeedback: () -> Unit
 ) {
+    val supabase = remember { SupabaseBackendClient.getInstance(context) }
+    val scope = rememberCoroutineScope()
+    var selectedClipTab by remember { mutableStateOf(0) } // 0 = Local, 1 = Cloud
+
     var history by remember {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         val primary = clipboard?.primaryClip?.let { clip ->
@@ -2168,6 +3005,20 @@ fun ClipboardSubPanel(
         mutableStateOf(prefs.getClipboardHistory())
     }
 
+    var cloudClips by remember { mutableStateOf<List<CloudClipboardItem>>(emptyList()) }
+    var isCloudLoading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(selectedClipTab) {
+        if (selectedClipTab == 1) {
+            isCloudLoading = true
+            val res = supabase.fetchCloudClipboard()
+            cloudClips = res.getOrDefault(emptyList())
+            isCloudLoading = false
+        }
+    }
+
+    val isFlatGrid = theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -2178,27 +3029,70 @@ fun ClipboardSubPanel(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(34.dp)
+                .height(36.dp)
                 .background(theme.functionKeyBg)
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.ContentPaste,
-                contentDescription = null,
-                tint = theme.functionTextColor,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "Clipboard History (${history.size})",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = theme.functionTextColor,
-                modifier = Modifier.weight(1f)
-            )
+            // Local vs Cloud Switcher
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(theme.keyBg.copy(alpha = 0.5f))
+                    .padding(2.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(if (selectedClipTab == 0) theme.candidateBg else Color.Transparent)
+                        .clickable {
+                            triggerFeedback()
+                            selectedClipTab = 0
+                        }
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = "Local (${history.size})",
+                        fontSize = 11.sp,
+                        fontWeight = if (selectedClipTab == 0) FontWeight.Bold else FontWeight.Normal,
+                        color = theme.keyTextColor
+                    )
+                }
 
-            if (history.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(if (selectedClipTab == 1) theme.candidateBg else Color.Transparent)
+                        .clickable {
+                            triggerFeedback()
+                            selectedClipTab = 1
+                        }
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Cloud,
+                            contentDescription = null,
+                            tint = if (selectedClipTab == 1) Color(0xFF2563EB) else theme.functionTextColor,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = "Cloud Copypad",
+                            fontSize = 11.sp,
+                            fontWeight = if (selectedClipTab == 1) FontWeight.Bold else FontWeight.Normal,
+                            color = if (selectedClipTab == 1) Color(0xFF2563EB) else theme.keyTextColor
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            if (selectedClipTab == 0 && history.isNotEmpty()) {
                 Row(
                     modifier = Modifier
                         .fillMaxHeight()
@@ -2207,7 +3101,7 @@ fun ClipboardSubPanel(
                             prefs.clearClipboardHistory()
                             history = emptyList()
                         }
-                        .padding(horizontal = 8.dp),
+                        .padding(horizontal = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
@@ -2215,7 +3109,7 @@ fun ClipboardSubPanel(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Clear",
                         tint = Color(0xFFEF4444),
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier.size(13.dp)
                     )
                     Text(
                         text = "Clear",
@@ -2224,14 +3118,52 @@ fun ClipboardSubPanel(
                         color = Color(0xFFEF4444)
                     )
                 }
+            } else if (selectedClipTab == 1 && history.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .clickable {
+                            triggerFeedback()
+                            val topClip = history.firstOrNull()
+                            if (!topClip.isNullOrBlank()) {
+                                scope.launch {
+                                    supabase.addCloudClipboardItem(topClip)
+                                    val res = supabase.fetchCloudClipboard()
+                                    cloudClips = res.getOrDefault(emptyList())
+                                }
+                            }
+                        }
+                        .padding(horizontal = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudUpload,
+                        contentDescription = "Save to Cloud",
+                        tint = Color(0xFF2563EB),
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = "+Save Top",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF2563EB)
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            if (isFlatGrid) {
+                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            } else {
+                Spacer(modifier = Modifier.width(4.dp))
+            }
 
+            val closeShape = RoundedCornerShape(if (isFlatGrid) 0.dp else 8.dp)
             Box(
                 modifier = Modifier
-                    .width(36.dp)
-                    .fillMaxHeight()
+                    .size(28.dp)
+                    .clip(closeShape)
+                    .background(if (isFlatGrid) Color.Transparent else theme.keyBg.copy(alpha = 0.5f))
                     .clickable {
                         triggerFeedback()
                         onClose()
@@ -2247,81 +3179,198 @@ fun ClipboardSubPanel(
             }
         }
 
-        Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        if (isFlatGrid) {
+            Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        } else {
+            Spacer(modifier = Modifier.height(2.dp))
+        }
 
         // Clips List
-        if (history.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .background(theme.keyBg),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+        if (selectedClipTab == 0) {
+            // Local Clipboard
+            if (history.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(if (isFlatGrid) theme.keyBg else theme.keyboardBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Assignment,
+                            contentDescription = null,
+                            tint = theme.keyTextColor.copy(alpha = 0.35f),
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Text(
+                            text = "Clipboard is empty",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = theme.keyTextColor
+                        )
+                        Text(
+                            text = "Copy text anywhere to paste it in 1 tap here",
+                            fontSize = 11.sp,
+                            color = theme.functionTextColor.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(if (isFlatGrid) theme.keyBg else theme.keyboardBg),
+                    contentPadding = PaddingValues(6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Assignment,
-                        contentDescription = null,
-                        tint = theme.keyTextColor.copy(alpha = 0.35f),
-                        modifier = Modifier.size(32.dp)
-                    )
-                    Text(
-                        text = "Clipboard is empty",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = theme.keyTextColor
-                    )
-                    Text(
-                        text = "Copy text anywhere to paste it in 1 tap here",
-                        fontSize = 11.sp,
-                        color = theme.functionTextColor.copy(alpha = 0.8f)
-                    )
+                    items(history) { clipText ->
+                        val clipShape = RoundedCornerShape(if (isFlatGrid) 0.dp else 8.dp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(clipShape)
+                                .background(theme.candidateBg)
+                                .then(
+                                    if (!isFlatGrid && theme.keyBorderWidthDp > 0f) Modifier.border(0.8.dp, theme.keyBorderColor.copy(alpha = 0.4f), clipShape)
+                                    else if (isFlatGrid) Modifier.border(1.dp, theme.gridBorderColor.copy(alpha = 0.5f), clipShape)
+                                    else Modifier
+                                )
+                                .clickable {
+                                    triggerFeedback()
+                                    listener?.onTextEntered(clipText)
+                                    prefs.addClipboardItem(clipText)
+                                    history = prefs.getClipboardHistory()
+                                }
+                                .padding(10.dp)
+                        ) {
+                            Text(
+                                text = clipText,
+                                fontSize = 13.sp,
+                                color = theme.keyTextColor,
+                                maxLines = 2
+                            )
+                        }
+                    }
                 }
             }
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .background(theme.keyBg),
-                contentPadding = PaddingValues(6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                items(history) { clipText ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(theme.candidateBg)
-                            .border(1.dp, theme.gridBorderColor.copy(alpha = 0.5f))
-                            .clickable {
-                                triggerFeedback()
-                                listener?.onTextEntered(clipText)
-                                prefs.addClipboardItem(clipText)
-                                history = prefs.getClipboardHistory()
-                            }
-                            .padding(10.dp)
+            // Cloud Copypad List
+            if (isCloudLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(if (isFlatGrid) theme.keyBg else theme.keyboardBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                }
+            } else if (cloudClips.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(if (isFlatGrid) theme.keyBg else theme.keyboardBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(
-                            text = clipText,
-                            fontSize = 13.sp,
-                            color = theme.keyTextColor,
-                            maxLines = 2
+                        Icon(
+                            imageVector = Icons.Default.Cloud,
+                            contentDescription = null,
+                            tint = Color(0xFF2563EB).copy(alpha = 0.4f),
+                            modifier = Modifier.size(32.dp)
                         )
+                        Text(
+                            text = "Cloud Copypad is empty",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = theme.keyTextColor
+                        )
+                        Text(
+                            text = "Save clips to Cloud to access permanently across devices",
+                            fontSize = 11.sp,
+                            color = theme.functionTextColor.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(if (isFlatGrid) theme.keyBg else theme.keyboardBg),
+                    contentPadding = PaddingValues(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    items(cloudClips) { clipItem ->
+                        val clipShape = RoundedCornerShape(if (isFlatGrid) 0.dp else 8.dp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(clipShape)
+                                .background(theme.candidateBg)
+                                .then(
+                                    if (!isFlatGrid && theme.keyBorderWidthDp > 0f) Modifier.border(0.8.dp, theme.keyBorderColor.copy(alpha = 0.4f), clipShape)
+                                    else if (isFlatGrid) Modifier.border(1.dp, theme.gridBorderColor.copy(alpha = 0.5f), clipShape)
+                                    else Modifier
+                                )
+                                .clickable {
+                                    triggerFeedback()
+                                    listener?.onTextEntered(clipItem.content)
+                                    prefs.addClipboardItem(clipItem.content)
+                                }
+                                .padding(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = clipItem.content,
+                                    fontSize = 13.sp,
+                                    color = theme.keyTextColor,
+                                    maxLines = 2,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(0xFFDBEAFE), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                                ) {
+                                    Text(
+                                        text = "Cloud",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF2563EB)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        if (isFlatGrid) {
+            Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        } else {
+            Spacer(modifier = Modifier.height(2.dp))
+        }
 
         // Bottom Return Button
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(38.dp)
+                .height(40.dp)
         ) {
             FlatKeyButton(
                 text = "Return to Keyboard",
@@ -2329,6 +3378,8 @@ fun ClipboardSubPanel(
                 backgroundColor = theme.accentColor,
                 textColor = theme.accentTextColor,
                 fontWeight = FontWeight.Bold,
+                isFunctionKey = true,
+                badgeColor = theme.enterBadgeColor,
                 modifier = Modifier.fillMaxSize(),
                 onClick = {
                     triggerFeedback()
@@ -2356,6 +3407,7 @@ fun NumberDialerSubPanel(
         listOf("*", "0", "#", "⏎"),
         listOf(".", ",", "/", "␣", "ABC")
     )
+    val isFlatGrid = theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID
 
     Column(
         modifier = Modifier
@@ -2365,7 +3417,11 @@ fun NumberDialerSubPanel(
     ) {
         dialerRows.forEachIndexed { rowIndex, rowKeys ->
             if (rowIndex > 0) {
-                Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+                if (isFlatGrid) {
+                    Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+                } else {
+                    Spacer(modifier = Modifier.height(2.dp))
+                }
             }
             Row(
                 modifier = Modifier
@@ -2374,7 +3430,9 @@ fun NumberDialerSubPanel(
             ) {
                 rowKeys.forEachIndexed { colIndex, key ->
                     if (colIndex > 0) {
-                        Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+                        if (isFlatGrid) {
+                            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+                        }
                     }
                     val isAction = key in listOf("⌫", "⏎", "ABC", "␣", "+", "-", "*", "#", "/")
                     val isReturn = key == "ABC"
@@ -2383,13 +3441,14 @@ fun NumberDialerSubPanel(
                     val isSpace = key == "␣"
 
                     val bg = when {
-                        isReturn -> theme.accentColor
+                        isReturn -> theme.functionKeyBg
                         isEnter -> theme.accentColor
                         isAction -> theme.functionKeyBg
                         else -> theme.keyBg
                     }
                     val txtColor = when {
-                        isReturn || isEnter -> theme.accentTextColor
+                        isReturn -> theme.functionTextColor
+                        isEnter -> theme.accentTextColor
                         isAction -> theme.functionTextColor
                         else -> theme.keyTextColor
                     }
@@ -2400,6 +3459,13 @@ fun NumberDialerSubPanel(
                         fontWeight = if (isAction) FontWeight.Bold else FontWeight.Medium,
                         backgroundColor = bg,
                         textColor = txtColor,
+                        isFunctionKey = isAction,
+                        badgeColor = when {
+                            isBackspace -> theme.backspaceBadgeColor
+                            isEnter -> theme.enterBadgeColor
+                            isReturn -> theme.modeBadgeColor
+                            else -> null
+                        },
                         modifier = Modifier.weight(if (isSpace) 1.5f else 1f),
                         onClick = {
                             triggerFeedback()
@@ -2573,12 +3639,25 @@ fun ThemePickerSubPanel(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        val isGlass = itemTheme.keyShapeStyle == KeyboardKeyShapeStyle.GLASSMORPHIC_3D
+                        val previewBrush = if (itemTheme.keyGradientTop != null && itemTheme.keyGradientBottom != null) {
+                            Brush.verticalGradient(listOf(itemTheme.keyGradientTop, itemTheme.keyGradientBottom))
+                        } else null
+                        val previewShape = RoundedCornerShape(if (isGlass) 5.dp else 3.dp)
+
                         Box(
                             modifier = Modifier
-                                .size(22.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(itemTheme.keyBg)
-                                .border(1.dp, itemTheme.accentColor, RoundedCornerShape(3.dp)),
+                                .size(24.dp)
+                                .clip(previewShape)
+                                .then(
+                                    if (previewBrush != null) Modifier.background(previewBrush)
+                                    else Modifier.background(itemTheme.keyBg)
+                                )
+                                .border(
+                                    1.dp,
+                                    itemTheme.keyBorderColor ?: itemTheme.accentColor,
+                                    previewShape
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -2598,7 +3677,13 @@ fun ThemePickerSubPanel(
                                     maxLines = 1,
                                     modifier = Modifier.weight(1f, fill = false)
                                 )
-                                if (itemTheme.isDark) {
+                                if (itemTheme.isCustomTheme) {
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "💎",
+                                        fontSize = 8.sp
+                                    )
+                                } else if (itemTheme.isDark) {
                                     Spacer(modifier = Modifier.width(3.dp))
                                     Text(
                                         text = "🌙",
@@ -2803,6 +3888,7 @@ fun SymbolsSubPanel(
 ) {
     var selectedCategory by remember { mutableStateOf(SymbolCategory.STARS) }
     var recentSymbols by remember { mutableStateOf(prefs.getRecentSymbols()) }
+    val isFlatGrid = theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID
 
     Column(
         modifier = Modifier
@@ -2814,7 +3900,7 @@ fun SymbolsSubPanel(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(34.dp)
+                .height(36.dp)
                 .background(theme.functionKeyBg)
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -2833,10 +3919,12 @@ fun SymbolsSubPanel(
                 color = theme.functionTextColor,
                 modifier = Modifier.weight(1f)
             )
+            val closeBtnShape = RoundedCornerShape(if (isFlatGrid) 0.dp else 8.dp)
             Box(
                 modifier = Modifier
-                    .width(36.dp)
-                    .fillMaxHeight()
+                    .size(28.dp)
+                    .clip(closeBtnShape)
+                    .background(if (isFlatGrid) Color.Transparent else theme.keyBg.copy(alpha = 0.5f))
                     .clickable {
                         triggerFeedback()
                         onClose()
@@ -2852,22 +3940,39 @@ fun SymbolsSubPanel(
             }
         }
 
-        Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        if (isFlatGrid) {
+            Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        } else {
+            Spacer(modifier = Modifier.height(2.dp))
+        }
 
         // Horizontal Category Tabs
         LazyRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(36.dp)
-                .background(theme.functionKeyBg),
-            verticalAlignment = Alignment.CenterVertically
+                .height(38.dp)
+                .background(theme.functionKeyBg)
+                .then(if (!isFlatGrid) Modifier.padding(horizontal = 4.dp, vertical = 2.dp) else Modifier),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = if (!isFlatGrid) Arrangement.spacedBy(4.dp) else Arrangement.Start
         ) {
             items(SymbolCategory.values()) { category ->
                 val isSelected = selectedCategory == category
+                val chipShape = RoundedCornerShape(if (isFlatGrid) 0.dp else 10.dp)
                 Box(
                     modifier = Modifier
-                        .fillMaxHeight()
-                        .background(if (isSelected) theme.accentColor.copy(alpha = 0.25f) else Color.Transparent)
+                        .fillMaxHeight(if (isFlatGrid) 1f else 0.88f)
+                        .clip(chipShape)
+                        .background(
+                            if (isSelected) theme.accentColor.copy(alpha = if (theme.isDark) 0.32f else 0.22f)
+                            else if (isFlatGrid) Color.Transparent
+                            else theme.keyBg.copy(alpha = 0.55f)
+                        )
+                        .then(
+                            if (isSelected && !isFlatGrid) Modifier.border(1.dp, theme.accentColor.copy(alpha = 0.75f), chipShape)
+                            else if (!isFlatGrid && theme.keyBorderWidthDp > 0f) Modifier.border(0.6.dp, theme.keyBorderColor.copy(alpha = 0.35f), chipShape)
+                            else Modifier
+                        )
                         .clickable {
                             triggerFeedback()
                             selectedCategory = category
@@ -2889,11 +3994,17 @@ fun SymbolsSubPanel(
                         )
                     }
                 }
-                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+                if (isFlatGrid) {
+                    Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+                }
             }
         }
 
-        Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        if (isFlatGrid) {
+            Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        } else {
+            Spacer(modifier = Modifier.height(2.dp))
+        }
 
         // Symbols Grid Area
         val currentSymbols = remember(selectedCategory, recentSymbols) {
@@ -2909,53 +4020,94 @@ fun SymbolsSubPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .background(theme.candidateBg),
-            contentPadding = PaddingValues(3.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                .background(if (isFlatGrid) theme.candidateBg else theme.keyboardBg),
+            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(if (isFlatGrid) 3.dp else 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (isFlatGrid) 3.dp else 4.dp)
         ) {
             items(currentSymbols) { sym ->
+                val symRadius = if (isFlatGrid) 4.dp else (theme.keyCornerRadiusDp * 0.75f).coerceAtLeast(6f).dp
+                val symShape = RoundedCornerShape(symRadius)
+                val isGlass = theme.keyShapeStyle == KeyboardKeyShapeStyle.GLASSMORPHIC_3D
+                val keyBrush = if (isGlass && theme.keyGradientTop != null && theme.keyGradientBottom != null) {
+                    Brush.verticalGradient(listOf(theme.keyGradientTop, theme.keyGradientBottom))
+                } else null
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(38.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(theme.keyBg)
-                        .border(width = 0.5.dp, color = theme.gridBorderColor.copy(alpha = 0.5f), shape = RoundedCornerShape(4.dp))
-                        .clickable {
-                            triggerFeedback()
-                            listener?.onTextEntered(sym)
-                            prefs.addRecentSymbol(sym)
-                            recentSymbols = prefs.getRecentSymbols()
-                        },
-                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = sym,
-                        fontSize = if (isWideItem) 12.sp else 16.sp,
-                        color = theme.keyTextColor,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1
-                    )
+                    if (!isFlatGrid && theme.keyElevationDp > 0f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .offset(y = (theme.keyElevationDp * 0.7f).dp)
+                                .clip(symShape)
+                                .background(theme.keyShadowColor)
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(symShape)
+                            .then(if (keyBrush != null) Modifier.background(keyBrush) else Modifier.background(theme.keyBg))
+                            .then(
+                                if (!isFlatGrid && theme.keyBorderWidthDp > 0f) {
+                                    Modifier.border(
+                                        width = theme.keyBorderWidthDp.dp,
+                                        brush = Brush.verticalGradient(
+                                            listOf(
+                                                theme.keyBorderColor,
+                                                theme.keyBorderColor.copy(alpha = 0.2f)
+                                            )
+                                        ),
+                                        shape = symShape
+                                    )
+                                } else if (isFlatGrid) {
+                                    Modifier.border(0.5.dp, theme.gridBorderColor.copy(alpha = 0.5f), symShape)
+                                } else Modifier
+                            )
+                            .clickable {
+                                triggerFeedback()
+                                listener?.onTextEntered(sym)
+                                prefs.addRecentSymbol(sym)
+                                recentSymbols = prefs.getRecentSymbols()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = sym,
+                            fontSize = if (isWideItem) 12.sp else 16.sp,
+                            color = theme.keyTextColor,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        if (isFlatGrid) {
+            Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+        } else {
+            Spacer(modifier = Modifier.height(2.dp))
+        }
 
         // Bottom Action Row (ABC, Space, Backspace)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(38.dp)
-                .background(theme.functionKeyBg)
+                .height(42.dp)
         ) {
             FlatKeyButton(
                 text = "ABC",
-                fontSize = 12.sp,
-                backgroundColor = theme.accentColor,
-                textColor = theme.accentTextColor,
+                fontSize = 13.sp,
+                backgroundColor = theme.functionKeyBg,
+                textColor = theme.functionTextColor,
                 fontWeight = FontWeight.Bold,
+                isFunctionKey = true,
+                badgeColor = theme.modeBadgeColor,
                 modifier = Modifier.weight(1.3f),
                 onClick = {
                     triggerFeedback()
@@ -2963,7 +4115,9 @@ fun SymbolsSubPanel(
                 }
             )
 
-            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            if (isFlatGrid) {
+                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            }
 
             SpacebarKey(
                 backgroundColor = theme.keyBg,
@@ -2974,12 +4128,15 @@ fun SymbolsSubPanel(
                 triggerFeedback = { triggerFeedback() }
             )
 
-            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            if (isFlatGrid) {
+                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            }
 
             RepeatingBackspaceKey(
                 backgroundColor = theme.functionKeyBg,
                 iconColor = theme.functionTextColor,
-                modifier = Modifier.weight(1.2f),
+                badgeColor = theme.backspaceBadgeColor,
+                modifier = Modifier.weight(1.3f),
                 onDelete = {
                     triggerFeedback()
                     listener?.onDelete()

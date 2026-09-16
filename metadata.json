@@ -1,6 +1,6 @@
 {
   "name": "SingBord",
-  "description": "Simple, fast 2D zero-gap keyboard with automatic system dark/light theme switching, Symbols Studio (16 categories), stylish Unicode fonts, theme templates, size adjustment, Banglish phonetic vocabulary, smart word learning, gestures, and emoji picker.",
+  "description": "Fast 2D zero-gap keyboard with English & Bangla typing, Cloud Backup & Sync, Quick Notes Copypad, Live Word Suggestions, Symbols Studio, and Stylish Fonts.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

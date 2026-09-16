@@ -24,6 +24,22 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -32,6 +48,7 @@ import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.SentimentSatisfied
 import androidx.compose.material.icons.filled.Settings
@@ -50,9 +67,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.AppNotice
+import com.example.data.CloudClipboardItem
+import com.example.data.SupabaseBackendClient
 import com.example.data.UserDictionaryRepository
 import com.example.data.UserWord
 import com.example.ui.theme.SingBordTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,7 +93,8 @@ class MainActivity : ComponentActivity() {
 enum class MainNavTab(val title: String, val icon: ImageVector) {
     KEYBOARD("Keyboard", Icons.Default.Keyboard),
     THEMES("Themes", Icons.Default.Palette),
-    SETTINGS("Settings", Icons.Default.Tune)
+    SETTINGS("Settings", Icons.Default.Tune),
+    ACCOUNT("Account & Sync", Icons.Default.CloudSync)
 }
 
 @Composable
@@ -92,6 +114,10 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
     var enableWordLearning by remember { mutableStateOf(prefs.enableWordLearning) }
     var enableBanglish by remember { mutableStateOf(prefs.enableBanglish) }
     var enableGestures by remember { mutableStateOf(prefs.enableGestures) }
+    var enableSpacebarCursor by remember { mutableStateOf(prefs.enableSpacebarCursor) }
+    var enableVoiceTyping by remember { mutableStateOf(prefs.enableVoiceTyping) }
+    var voiceLanguage by remember { mutableStateOf(prefs.voiceLanguage) }
+    var showLanguageSwitchKey by remember { mutableStateOf(prefs.showLanguageSwitchKey) }
     var enableEmoji by remember { mutableStateOf(prefs.enableEmoji) }
     var enableHaptics by remember { mutableStateOf(prefs.enableHaptics) }
     var enableSound by remember { mutableStateOf(prefs.enableSound) }
@@ -100,6 +126,7 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
     var enableKeyAnimation by remember { mutableStateOf(prefs.enableKeyAnimation) }
     var enableStylishFonts by remember { mutableStateOf(prefs.enableStylishFonts) }
     var activeStylishStyle by remember { mutableStateOf(prefs.activeStylishStyle) }
+    var defaultLanguage by remember { mutableStateOf(prefs.defaultLanguage) }
 
     // User Dictionary Repository and Live Words
     val userRepo = remember { UserDictionaryRepository.getInstance(context) }
@@ -142,6 +169,10 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
         enableWordLearning = enableWordLearning,
         enableBanglish = enableBanglish,
         enableGestures = enableGestures,
+        enableSpacebarCursor = enableSpacebarCursor,
+        enableVoiceTyping = enableVoiceTyping,
+        voiceLanguage = voiceLanguage,
+        showLanguageSwitchKey = showLanguageSwitchKey,
         enableEmoji = enableEmoji,
         enableHaptics = enableHaptics,
         enableSound = enableSound,
@@ -149,7 +180,8 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
         enableKeyAnimation = enableKeyAnimation,
         autoCapitalization = autoCapitalization,
         enableStylishFonts = enableStylishFonts,
-        activeStylishStyle = activeStylishStyle
+        activeStylishStyle = activeStylishStyle,
+        defaultLanguage = defaultLanguage
     )
 
     Scaffold(
@@ -261,6 +293,22 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
                             enableGestures = it
                             prefs.enableGestures = it
                         },
+                        onSpacebarCursorChange = {
+                            enableSpacebarCursor = it
+                            prefs.enableSpacebarCursor = it
+                        },
+                        onVoiceTypingChange = {
+                            enableVoiceTyping = it
+                            prefs.enableVoiceTyping = it
+                        },
+                        onVoiceLanguageChange = {
+                            voiceLanguage = it
+                            prefs.voiceLanguage = it
+                        },
+                        onLanguageSwitchKeyChange = {
+                            showLanguageSwitchKey = it
+                            prefs.showLanguageSwitchKey = it
+                        },
                         onEmojiChange = {
                             enableEmoji = it
                             prefs.enableEmoji = it
@@ -309,10 +357,48 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
                             activeStylishStyle = it
                             prefs.activeStylishStyle = it
                         },
+                        onDefaultLanguageChange = {
+                            defaultLanguage = it
+                            prefs.defaultLanguage = it
+                        },
                         userRepo = userRepo,
                         learnedWords = learnedWords,
                         onShowPrivacy = { showPrivacyDialog = true },
                         onShowTerms = { showTermsDialog = true }
+                    )
+                }
+                MainNavTab.ACCOUNT -> {
+                    AccountHubTab(
+                        context = context,
+                        prefs = prefs,
+                        userRepo = userRepo,
+                        learnedWords = learnedWords,
+                        onSettingsRestored = {
+                            themeId = prefs.themeId
+                            followSystemTheme = prefs.followSystemTheme
+                            lightThemeId = prefs.lightThemeId
+                            darkThemeId = prefs.darkThemeId
+                            lineThicknessDp = prefs.lineThicknessDp
+                            keyboardSize = prefs.keyboardSize
+                            showNumberRow = prefs.showNumberRow
+                            showSuggestions = prefs.showSuggestions
+                            enableWordLearning = prefs.enableWordLearning
+                            enableBanglish = prefs.enableBanglish
+                            enableGestures = prefs.enableGestures
+                            enableSpacebarCursor = prefs.enableSpacebarCursor
+                            enableVoiceTyping = prefs.enableVoiceTyping
+                            voiceLanguage = prefs.voiceLanguage
+                            showLanguageSwitchKey = prefs.showLanguageSwitchKey
+                            enableEmoji = prefs.enableEmoji
+                            enableHaptics = prefs.enableHaptics
+                            enableSound = prefs.enableSound
+                            enableKeyPopup = prefs.enableKeyPopup
+                            autoCapitalization = prefs.autoCapitalization
+                            enableStylishFonts = prefs.enableStylishFonts
+                            activeStylishStyle = prefs.activeStylishStyle
+                            enableKeyAnimation = prefs.enableKeyAnimation
+                            defaultLanguage = prefs.defaultLanguage
+                        }
                     )
                 }
             }
@@ -1231,6 +1317,10 @@ fun KeyboardSettingsTab(
     onBanglishChange: (Boolean) -> Unit,
     onWordLearningChange: (Boolean) -> Unit,
     onGesturesChange: (Boolean) -> Unit,
+    onSpacebarCursorChange: (Boolean) -> Unit,
+    onVoiceTypingChange: (Boolean) -> Unit,
+    onVoiceLanguageChange: (String) -> Unit,
+    onLanguageSwitchKeyChange: (Boolean) -> Unit,
     onEmojiChange: (Boolean) -> Unit,
     onKeyboardSizeChange: (KeyboardSize) -> Unit,
     onLineThicknessChange: (Float) -> Unit,
@@ -1243,6 +1333,7 @@ fun KeyboardSettingsTab(
     onSoundChange: (Boolean) -> Unit,
     onStylishFontsChange: (Boolean) -> Unit,
     onActiveStyleChange: (String) -> Unit,
+    onDefaultLanguageChange: (KeyboardLanguage) -> Unit,
     userRepo: UserDictionaryRepository,
     learnedWords: List<UserWord>,
     onShowPrivacy: () -> Unit,
@@ -1255,6 +1346,96 @@ fun KeyboardSettingsTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Section 0: Default Keyboard Language Card
+        FlatCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(Color(0xFFEFF6FF), RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Language,
+                            contentDescription = null,
+                            tint = Color(0xFF2563EB),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Default Keyboard Layout (ডিফল্ট কীবোর্ড ভাষা)",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = "Set primary startup typing script when keyboard opens",
+                            fontSize = 12.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                val availableLanguages = listOf(
+                    Triple(KeyboardLanguage.ENGLISH, "English (QWERTY)", "Standard English layout with word suggestions"),
+                    Triple(KeyboardLanguage.BANGLA_PROBHAT, "বাংলা প্রভাত (Bangla Probhat)", "Complete Probhat layout with Bengali letters & alternates"),
+                    Triple(KeyboardLanguage.AVRO, "বাংলা অভ্রো (Bangla Avro)", "English phonetic typing converting to Bangla in real-time")
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    availableLanguages.forEach { (lang, title, desc) ->
+                        val isSelected = currentSettings.defaultLanguage == lang
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isSelected) Color(0xFFEFF6FF) else Color(0xFFF8FAFC))
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isSelected) Color(0xFF2563EB) else Color(0xFFE2E8F0),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .clickable { onDefaultLanguageChange(lang) }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = { onDefaultLanguageChange(lang) },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = Color(0xFF2563EB)
+                                )
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = title,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isSelected) Color(0xFF1E40AF) else Color(0xFF0F172A)
+                                )
+                                Text(
+                                    text = desc,
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF64748B)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Section 1: Core Features On/Off Hub
         FlatCard {
             Column(
@@ -1327,21 +1508,133 @@ fun KeyboardSettingsTab(
 
                 // Feature 4: Spacebar Cursor Gestures
                 ToggleOptionRow(
-                    title = "4. Spacebar Cursor Gestures (স্পেসবার স্লাইড কার্সার)",
+                    title = "4. Spacebar Cursor Slide (স্পেসবার স্লাইড কার্সার অন/অফ)",
                     description = "Slide finger left or right on spacebar to accurately move cursor",
-                    checked = currentSettings.enableGestures,
-                    onCheckedChange = onGesturesChange
+                    checked = currentSettings.enableSpacebarCursor,
+                    onCheckedChange = onSpacebarCursorChange
                 )
 
                 HorizontalDivider(color = Color(0xFFE2E8F0))
 
-                // Feature 5: Emoji Keyboard
+                // Feature 5: Voice Typing / Speech Button
                 ToggleOptionRow(
-                    title = "5. Emoji Keyboard & Key (ইমোজি কীবোর্ড ও বাটন)",
+                    title = "5. Speech / Voice Typing (ভয়েস টাইপিং ও স্পিচ বাটন অন/অফ)",
+                    description = "Microphone button to speak and convert Bangla or English speech into text",
+                    checked = currentSettings.enableVoiceTyping,
+                    onCheckedChange = onVoiceTypingChange
+                )
+
+                HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                // Feature 6: Bottom Language Switch Key
+                ToggleOptionRow(
+                    title = "6. Bottom Language Key (কীবোর্ডের নিচে ভাষা পরিবর্তন বাটন)",
+                    description = "Dedicated 🌐 language icon at bottom row for fast switching",
+                    checked = currentSettings.showLanguageSwitchKey,
+                    onCheckedChange = onLanguageSwitchKeyChange
+                )
+
+                HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                // Feature 7: Emoji Keyboard
+                ToggleOptionRow(
+                    title = "7. Emoji Keyboard & Key (ইমোজি কীবোর্ড ও বাটন)",
                     description = "Dedicated 😊 emoji key and 8 offline emoji category grids",
                     checked = currentSettings.enableEmoji,
                     onCheckedChange = onEmojiChange
                 )
+            }
+        }
+
+        // Section: Speech / Voice Typing Language Selection Hub
+        if (currentSettings.enableVoiceTyping) {
+            FlatCard {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .background(Color(0xFFFEF2F2), RoundedCornerShape(8.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = null,
+                                tint = Color(0xFFDC2626),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "Speech Input Language (স্পিচ বাটন ভাষা পরিবর্তন)",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A)
+                            )
+                            Text(
+                                text = "Select default recognition language for microphone input",
+                                fontSize = 12.sp,
+                                color = Color(0xFF64748B)
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                    val voiceLanguages = listOf(
+                        Triple("auto", "Auto (অটো সিঙ্ক)", "Syncs automatically with keyboard language (Bangla / English)"),
+                        Triple("bn-BD", "বাংলা (Bangladesh)", "বাংলা ভাষায় ভয়েস ইনপুট ও টাইপিং"),
+                        Triple("en-US", "English (United States)", "English language speech-to-text recognition")
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        voiceLanguages.forEach { (langCode, title, desc) ->
+                            val isSelected = currentSettings.voiceLanguage == langCode
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) Color(0xFFEFF6FF) else Color(0xFFF8FAFC))
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSelected) Color(0xFF2563EB) else Color(0xFFE2E8F0),
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable { onVoiceLanguageChange(langCode) }
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = { onVoiceLanguageChange(langCode) },
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = Color(0xFF2563EB)
+                                    )
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = title,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isSelected) Color(0xFF1E40AF) else Color(0xFF0F172A)
+                                    )
+                                    Text(
+                                        text = desc,
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF64748B)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1810,13 +2103,17 @@ fun KeyboardSettingsTab(
 
 @Composable
 fun FlatCard(
+    modifier: Modifier = Modifier,
+    backgroundColor: Color = Color.White,
+    borderColor: Color = Color(0xFFE2E8F0),
     content: @Composable () -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White)
-            .border(width = 1.dp, color = Color(0xFFE2E8F0), shape = RoundedCornerShape(6.dp))
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = backgroundColor,
+        border = BorderStroke(1.dp, borderColor),
+        shadowElevation = 0.5.dp
     ) {
         content()
     }
@@ -2074,3 +2371,995 @@ fun LearnedWordChip(
         }
     }
 }
+
+@Composable
+fun AccountHubTab(
+    context: Context,
+    prefs: SingBordPreferences,
+    userRepo: UserDictionaryRepository,
+    learnedWords: List<UserWord>,
+    onSettingsRestored: () -> Unit
+) {
+    val supabase = remember { SupabaseBackendClient.getInstance(context) }
+    val scope = rememberCoroutineScope()
+
+    var isLoggedIn by remember { mutableStateOf(supabase.isLoggedIn) }
+    var userEmail by remember { mutableStateOf(supabase.currentUserEmail) }
+    var userId by remember { mutableStateOf(supabase.currentUserId) }
+
+    // Auth Form State
+    var emailInput by remember { mutableStateOf("") }
+    var passwordInput by remember { mutableStateOf("") }
+    var isRegisterMode by remember { mutableStateOf(false) }
+    var authLoading by remember { mutableStateOf(false) }
+    var authMessage by remember { mutableStateOf<Pair<Boolean, String>?>(null) } // isSuccess to text
+
+    // Sync States
+    var syncLoading by remember { mutableStateOf(false) }
+    var syncStatusText by remember { mutableStateOf("") }
+
+    // Quick Notes & Copypad State
+    var cloudClips by remember { mutableStateOf<List<CloudClipboardItem>>(emptyList()) }
+    var cloudClipsLoading by remember { mutableStateOf(false) }
+    var newClipText by remember { mutableStateOf("") }
+
+    // Online Dict State
+    var onlineDictEnabled by remember { mutableStateOf(prefs.enableOnlineDictionary) }
+    var testQuery by remember { mutableStateOf("") }
+    var testResults by remember { mutableStateOf<List<String>>(emptyList()) }
+    var testSearching by remember { mutableStateOf(false) }
+
+    // Notices State
+    var notices by remember { mutableStateOf<List<AppNotice>>(emptyList()) }
+    var noticesLoading by remember { mutableStateOf(false) }
+
+    // Load initial data
+    LaunchedEffect(Unit) {
+        cloudClipsLoading = true
+        val clipsResult = supabase.fetchCloudClipboard()
+        cloudClips = clipsResult.getOrDefault(emptyList())
+        cloudClipsLoading = false
+
+        noticesLoading = true
+        val noticesResult = supabase.fetchNotices()
+        notices = noticesResult.getOrDefault(emptyList())
+        noticesLoading = false
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // 1. Account & Authentication Card
+        FlatCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(Color(0xFFEDE9FE), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = Color(0xFF7C3AED),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "SingBord Account & Sync",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = "Backup your preferences, quick notes & words",
+                            fontSize = 12.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                    if (isLoggedIn) {
+                        Surface(
+                            color = Color(0xFFDCFCE7),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0xFF86EFAC))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF16A34A),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = "Connected",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF16A34A)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (isLoggedIn) {
+                    // Logged In Profile Box
+                    Surface(
+                        color = Color(0xFFF8FAFC),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(Color(0xFF7C3AED), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = (userEmail.firstOrNull() ?: 'U').uppercase(),
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = userEmail,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF0F172A)
+                                    )
+                                    Text(
+                                        text = "Account Active • Encrypted Sync",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF16A34A),
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            supabase.signOut()
+                            isLoggedIn = false
+                            userEmail = ""
+                            userId = ""
+                            authMessage = Pair(true, "Successfully signed out")
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFEE2E2),
+                            contentColor = Color(0xFFDC2626)
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Sign Out", fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    // Segmented Switch Tab for Sign In / Sign Up
+                    Surface(
+                        color = Color(0xFFF1F5F9),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(4.dp)
+                        ) {
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        isRegisterMode = false
+                                        authMessage = null
+                                    },
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (!isRegisterMode) Color.White else Color.Transparent,
+                                shadowElevation = if (!isRegisterMode) 1.dp else 0.dp
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Sign In",
+                                        fontSize = 13.sp,
+                                        fontWeight = if (!isRegisterMode) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (!isRegisterMode) Color(0xFF0F172A) else Color(0xFF64748B)
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        isRegisterMode = true
+                                        authMessage = null
+                                    },
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isRegisterMode) Color.White else Color.Transparent,
+                                shadowElevation = if (isRegisterMode) 1.dp else 0.dp
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Create Account",
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isRegisterMode) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isRegisterMode) Color(0xFF0F172A) else Color(0xFF64748B)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = emailInput,
+                        onValueChange = { emailInput = it },
+                        label = { Text("Email Address") },
+                        placeholder = { Text("user@example.com") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Email, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = passwordInput,
+                        onValueChange = { passwordInput = it },
+                        label = { Text("Password") },
+                        placeholder = { Text("••••••••") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))
+                        },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    if (authMessage != null) {
+                        Surface(
+                            color = if (authMessage!!.first) Color(0xFFDCFCE7) else Color(0xFFFEE2E2),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, if (authMessage!!.first) Color(0xFF86EFAC) else Color(0xFFFCA5A5)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = authMessage!!.second,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (authMessage!!.first) Color(0xFF15803D) else Color(0xFFB91C1C),
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            if (emailInput.isBlank() || passwordInput.isBlank()) {
+                                authMessage = Pair(false, "Please enter both email and password")
+                                return@Button
+                            }
+                            authLoading = true
+                            authMessage = null
+                            scope.launch {
+                                val res = if (isRegisterMode) {
+                                    supabase.signUp(emailInput, passwordInput)
+                                } else {
+                                    supabase.signIn(emailInput, passwordInput)
+                                }
+                                authLoading = false
+                                res.onSuccess { user ->
+                                    isLoggedIn = true
+                                    userEmail = user.email
+                                    userId = user.id
+                                    authMessage = Pair(true, if (isRegisterMode) "Account created & ready!" else "Welcome back! Signed in.")
+                                    
+                                    // Auto restore settings on login if available
+                                    val restoreRes = supabase.fetchSettingsFromCloud()
+                                    restoreRes.onSuccess { jsonStr ->
+                                        if (prefs.applySettingsFromJson(jsonStr)) {
+                                            onSettingsRestored()
+                                        }
+                                    }
+                                }.onFailure { err ->
+                                    authMessage = Pair(false, err.message ?: "Authentication failed")
+                                }
+                            }
+                        },
+                        enabled = !authLoading,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF2563EB),
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(vertical = 12.dp)
+                    ) {
+                        if (authLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Text(
+                                text = if (isRegisterMode) "Create Account" else "Sign In",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Settings Cloud Backup & Auto Restore Card
+        FlatCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(Color(0xFFEFF6FF), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudSync,
+                            contentDescription = null,
+                            tint = Color(0xFF2563EB),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Settings Backup & Restore",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = "Safely backup themes, layout & preferences",
+                            fontSize = 12.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                }
+
+                if (syncStatusText.isNotBlank()) {
+                    Surface(
+                        color = Color(0xFFF0FDF4),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Color(0xFFBBF7D0)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = syncStatusText,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF15803D),
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            syncLoading = true
+                            syncStatusText = "Backing up settings..."
+                            scope.launch {
+                                val jsonStr = prefs.exportSettingsToJson()
+                                val res = supabase.backupSettingsToCloud(jsonStr)
+                                syncLoading = false
+                                res.onSuccess {
+                                    syncStatusText = "✓ Settings successfully backed up!"
+                                }.onFailure { err ->
+                                    syncStatusText = "Backup notice: ${err.message}"
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF2563EB),
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(vertical = 10.dp)
+                    ) {
+                        Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Backup", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            syncLoading = true
+                            syncStatusText = "Restoring settings..."
+                            scope.launch {
+                                val res = supabase.fetchSettingsFromCloud()
+                                syncLoading = false
+                                res.onSuccess { jsonStr ->
+                                    if (prefs.applySettingsFromJson(jsonStr)) {
+                                        onSettingsRestored()
+                                        syncStatusText = "✓ Settings successfully restored & applied!"
+                                    } else {
+                                        syncStatusText = "Failed to apply restored settings"
+                                    }
+                                }.onFailure { err ->
+                                    syncStatusText = "Restore notice: ${err.message}"
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(vertical = 10.dp)
+                    ) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Restore", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // 3. Quick Notes & Copypad
+        FlatCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(Color(0xFFFEF3C7), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentPaste,
+                            contentDescription = null,
+                            tint = Color(0xFFD97706),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Quick Notes & Copypad",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = "Save permanent snippets & notes for instant pasting",
+                            fontSize = 12.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                cloudClipsLoading = true
+                                val res = supabase.fetchCloudClipboard()
+                                cloudClips = res.getOrDefault(emptyList())
+                                cloudClipsLoading = false
+                            }
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh clips",
+                            tint = Color(0xFF64748B),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                // Add New Clip Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = newClipText,
+                        onValueChange = { newClipText = it },
+                        placeholder = { Text("Add snippet or note...") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    Button(
+                        onClick = {
+                            if (newClipText.isNotBlank()) {
+                                val txt = newClipText.trim()
+                                newClipText = ""
+                                scope.launch {
+                                    supabase.addCloudClipboardItem(txt)
+                                    val res = supabase.fetchCloudClipboard()
+                                    cloudClips = res.getOrDefault(emptyList())
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFD97706),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Save")
+                    }
+                }
+
+                if (cloudClipsLoading) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                } else if (cloudClips.isEmpty()) {
+                    Text(
+                        text = "No saved notes yet. Add your favorite snippets above to access them anytime.",
+                        fontSize = 12.sp,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier.padding(vertical = 6.dp)
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        cloudClips.take(8).forEach { item ->
+                            Surface(
+                                color = Color(0xFFF8FAFC),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = item.content,
+                                        fontSize = 13.sp,
+                                        color = Color(0xFF0F172A),
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 2
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                            clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("SingBord", item.content))
+                                            prefs.addClipboardItem(item.content)
+                                            syncStatusText = "✓ Copied to clipboard!"
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "Copy",
+                                            tint = Color(0xFF2563EB),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            scope.launch {
+                                                supabase.deleteCloudClipboardItem(item.id)
+                                                val res = supabase.fetchCloudClipboard()
+                                                cloudClips = res.getOrDefault(emptyList())
+                                            }
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Delete",
+                                            tint = Color(0xFFEF4444),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Personal Vocabulary Sync
+        FlatCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(Color(0xFFECFDF5), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MenuBook,
+                            contentDescription = null,
+                            tint = Color(0xFF059669),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Personal Vocabulary Sync",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = "Sync custom words to keep predictions fast on all devices",
+                            fontSize = 12.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                }
+
+                Surface(
+                    color = Color(0xFFF1F5F9),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Learned Words: ${learnedWords.size} custom words saved locally",
+                        fontSize = 12.sp,
+                        color = Color(0xFF334155),
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                syncLoading = true
+                                val wordsList = learnedWords.map { it.word }
+                                val res = supabase.syncUserWordsToCloud(wordsList)
+                                syncLoading = false
+                                res.onSuccess { count ->
+                                    syncStatusText = "✓ Synced $count vocabulary words!"
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF059669),
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(vertical = 10.dp)
+                    ) {
+                        Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Sync Words", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                syncLoading = true
+                                val res = supabase.fetchCloudUserWords()
+                                syncLoading = false
+                                res.onSuccess { cloudWords ->
+                                    cloudWords.forEach { word ->
+                                        userRepo.addCustomWord(word, 5)
+                                    }
+                                    syncStatusText = "✓ Imported ${cloudWords.size} words!"
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(vertical = 10.dp)
+                    ) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Download Words", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // 5. Smart Live Word Predictions
+        FlatCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(Color(0xFFF0FDF4), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = Color(0xFF16A34A),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Smart Live Word Predictions",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = "Intelligent vocabulary suggestions while typing",
+                            fontSize = 12.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                    Switch(
+                        checked = onlineDictEnabled,
+                        onCheckedChange = {
+                            onlineDictEnabled = it
+                            prefs.enableOnlineDictionary = it
+                        }
+                    )
+                }
+
+                // Test live suggestion input
+                OutlinedTextField(
+                    value = testQuery,
+                    onValueChange = { q ->
+                        testQuery = q
+                        if (q.length >= 2 && onlineDictEnabled) {
+                            testSearching = true
+                            scope.launch {
+                                val results = supabase.fetchOnlineSuggestions(q)
+                                testResults = results
+                                testSearching = false
+                            }
+                        } else {
+                            testResults = emptyList()
+                        }
+                    },
+                    placeholder = { Text("Test word prediction (e.g. 'বাংলা', 'prog')...") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp)
+                )
+
+                if (testResults.isNotEmpty()) {
+                    Text(
+                        text = "Suggestions for '$testQuery':",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF16A34A)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        testResults.forEach { sug ->
+                            Surface(
+                                color = Color(0xFFDCFCE7),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, Color(0xFF86EFAC))
+                            ) {
+                                Text(
+                                    text = sug,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF15803D),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. Official Announcements & Updates
+        FlatCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(Color(0xFFFFEDD5), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Campaign,
+                            contentDescription = null,
+                            tint = Color(0xFFEA580C),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Updates & Announcements",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = "Latest features, updates & official notices",
+                            fontSize = 12.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                noticesLoading = true
+                                val res = supabase.fetchNotices()
+                                notices = res.getOrDefault(emptyList())
+                                noticesLoading = false
+                            }
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Refresh notices",
+                            tint = Color(0xFF64748B),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                if (noticesLoading) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        notices.forEach { notice ->
+                            val tagBg = when (notice.tag) {
+                                "New Feature" -> Color(0xFFEDE9FE)
+                                "Bug Fix" -> Color(0xFFDCFCE7)
+                                else -> Color(0xFFDBEAFE)
+                            }
+                            val tagColor = when (notice.tag) {
+                                "New Feature" -> Color(0xFF7C3AED)
+                                "Bug Fix" -> Color(0xFF16A34A)
+                                else -> Color(0xFF2563EB)
+                            }
+
+                            Surface(
+                                color = Color(0xFFF8FAFC),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Surface(
+                                            color = tagBg,
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = notice.tag,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = tagColor,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                        Text(
+                                            text = notice.version,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFF64748B)
+                                        )
+                                        Spacer(modifier = Modifier.weight(1f))
+                                        Text(
+                                            text = notice.date,
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF94A3B8)
+                                        )
+                                    }
+
+                                    Text(
+                                        text = notice.title,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF0F172A)
+                                    )
+
+                                    Text(
+                                        text = notice.content,
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF475569),
+                                        lineHeight = 17.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

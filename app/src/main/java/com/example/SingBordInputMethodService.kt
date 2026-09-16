@@ -7,6 +7,7 @@ import android.text.InputType
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -97,7 +98,7 @@ class SingBordInputMethodService : InputMethodService(),
                             if (!selectedText.isNullOrEmpty()) {
                                 ic.commitText("", 1)
                             } else {
-                                ic.deleteSurroundingText(1, 0)
+                                deleteGraphemeClusterAware(ic)
                             }
                         }
 
@@ -196,10 +197,15 @@ class SingBordInputMethodService : InputMethodService(),
                             ic.sendKeyEvent(upShift)
                         }
 
-                        override fun onVoiceInput() {
+                        override fun onVoiceInput(languageCode: String?) {
                             try {
                                 val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                                     putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                    if (!languageCode.isNullOrBlank()) {
+                                        putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, languageCode)
+                                        putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, languageCode)
+                                        putExtra("android.speech.extra.EXTRA_ADDITIONAL_LANGUAGES", arrayOf(languageCode))
+                                    }
                                     addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                                 }
                                 startActivity(intent)
@@ -277,6 +283,50 @@ class SingBordInputMethodService : InputMethodService(),
             return optionsAction
         }
         return EditorInfo.IME_ACTION_NONE
+    }
+
+    /**
+     * Intelligently removes a complete Bangla grapheme cluster / combining character sequence
+     * (e.g. virama, vowel signs, phalas, candrabindu) instead of blindly deleting 1 code unit.
+     */
+    private fun deleteGraphemeClusterAware(ic: InputConnection) {
+        val textBefore = ic.getTextBeforeCursor(16, 0)
+        if (textBefore.isNullOrEmpty()) {
+            ic.deleteSurroundingText(1, 0)
+            return
+        }
+
+        val str = textBefore.toString()
+        val len = str.length
+        val lastChar = str[len - 1]
+
+        // Check if last character is a Bangla combining mark:
+        // Combining vowel signs (া to ৌ): 0x09BE - 0x09CC
+        // Virama (্): 0x09CD
+        // Candrabindu (ঁ): 0x0981, Anusvara (ং): 0x0982, Visarga (ঃ): 0x0983
+        // Hasanta/virama + preceding consonant
+        val isCombiningMark = lastChar in '\u09BE'..'\u09CD' || lastChar in '\u0981'..'\u0983' || lastChar == '\u09D7'
+
+        if (isCombiningMark) {
+            // Delete the combining mark first
+            ic.deleteSurroundingText(1, 0)
+            return
+        }
+
+        // If the character before this one was a virama (্), e.g., ক + ্ + ত (conjunct)
+        // deleting the current consonant should leave the virama or clean the sequence
+        if (len >= 2 && str[len - 2] == '\u09CD') {
+            // It's a conjunct ending. Delete 1 character
+            ic.deleteSurroundingText(1, 0)
+            return
+        }
+
+        // Standard 1-character deletion (handles surrogate pairs if needed)
+        if (Character.isSurrogate(lastChar) && len >= 2 && Character.isSurrogatePair(str[len - 2], lastChar)) {
+            ic.deleteSurroundingText(2, 0)
+        } else {
+            ic.deleteSurroundingText(1, 0)
+        }
     }
 }
 
