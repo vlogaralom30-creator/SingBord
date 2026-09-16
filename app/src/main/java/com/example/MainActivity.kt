@@ -93,6 +93,8 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
     var enableSound by remember { mutableStateOf(prefs.enableSound) }
     var enableKeyPopup by remember { mutableStateOf(prefs.enableKeyPopup) }
     var autoCapitalization by remember { mutableStateOf(prefs.autoCapitalization) }
+    var enableStylishFonts by remember { mutableStateOf(prefs.enableStylishFonts) }
+    var activeStylishStyle by remember { mutableStateOf(prefs.activeStylishStyle) }
 
     // User Dictionary Repository and Live Words
     val userRepo = remember { UserDictionaryRepository.getInstance(context) }
@@ -136,7 +138,9 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
         enableHaptics = enableHaptics,
         enableSound = enableSound,
         enableKeyPopup = enableKeyPopup,
-        autoCapitalization = autoCapitalization
+        autoCapitalization = autoCapitalization,
+        enableStylishFonts = enableStylishFonts,
+        activeStylishStyle = activeStylishStyle
     )
 
     Scaffold(
@@ -267,6 +271,14 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
                         onSoundChange = {
                             enableSound = it
                             prefs.enableSound = it
+                        },
+                        onStylishFontsChange = {
+                            enableStylishFonts = it
+                            prefs.enableStylishFonts = it
+                        },
+                        onActiveStyleChange = {
+                            activeStylishStyle = it
+                            prefs.activeStylishStyle = it
                         },
                         userRepo = userRepo,
                         learnedWords = learnedWords,
@@ -1008,6 +1020,8 @@ fun KeyboardSettingsTab(
     onAutoCapChange: (Boolean) -> Unit,
     onHapticsChange: (Boolean) -> Unit,
     onSoundChange: (Boolean) -> Unit,
+    onStylishFontsChange: (Boolean) -> Unit,
+    onActiveStyleChange: (String) -> Unit,
     userRepo: UserDictionaryRepository,
     learnedWords: List<UserWord>,
     onShowPrivacy: () -> Unit,
@@ -1020,7 +1034,7 @@ fun KeyboardSettingsTab(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Section 1: 4 New Core Features On/Off Hub
+        // Section 1: Core Features On/Off Hub
         FlatCard {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -1045,7 +1059,7 @@ fun KeyboardSettingsTab(
                     }
                     Column {
                         Text(
-                            text = "Core Features Control (নতুন ৪টি ফিচার)",
+                            text = "Core Features Control (কোর ফিচার নিয়ন্ত্রণ)",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF0F172A)
@@ -1060,9 +1074,19 @@ fun KeyboardSettingsTab(
 
                 HorizontalDivider(color = Color(0xFFE2E8F0))
 
-                // Feature 1: Banglish
+                // Feature 1: Stylish Fonts
                 ToggleOptionRow(
-                    title = "1. Banglish Vocabulary (বাংলিশ শব্দকোষ)",
+                    title = "1. Stylish Fonts (স্টাইলিশ ইউনিকোড ফন্টস)",
+                    description = "Write in Cursive, Bold Script, Double Struck, Slashed (q̷w̷e̷) anywhere",
+                    checked = currentSettings.enableStylishFonts,
+                    onCheckedChange = onStylishFontsChange
+                )
+
+                HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                // Feature 2: Banglish
+                ToggleOptionRow(
+                    title = "2. Banglish Vocabulary (বাংলিশ শব্দকোষ)",
                     description = "Phonetic Banglish dictionary suggestions (ami, tumi, kemon, etc.)",
                     checked = currentSettings.enableBanglish,
                     onCheckedChange = onBanglishChange
@@ -1070,9 +1094,9 @@ fun KeyboardSettingsTab(
 
                 HorizontalDivider(color = Color(0xFFE2E8F0))
 
-                // Feature 2: Smart Word Learning
+                // Feature 3: Smart Word Learning
                 ToggleOptionRow(
-                    title = "2. Smart Word Learning (স্মার্ট ডিকশনারি লার্নিং)",
+                    title = "3. Smart Word Learning (স্মার্ট ডিকশনারি লার্নিং)",
                     description = "Memorize your frequently typed words offline and rank higher",
                     checked = currentSettings.enableWordLearning,
                     onCheckedChange = onWordLearningChange
@@ -1080,9 +1104,9 @@ fun KeyboardSettingsTab(
 
                 HorizontalDivider(color = Color(0xFFE2E8F0))
 
-                // Feature 3: Spacebar Cursor Gestures
+                // Feature 4: Spacebar Cursor Gestures
                 ToggleOptionRow(
-                    title = "3. Spacebar Cursor Gestures (স্পেসবার স্লাইড কার্সার)",
+                    title = "4. Spacebar Cursor Gestures (স্পেসবার স্লাইড কার্সার)",
                     description = "Slide finger left or right on spacebar to accurately move cursor",
                     checked = currentSettings.enableGestures,
                     onCheckedChange = onGesturesChange
@@ -1090,13 +1114,91 @@ fun KeyboardSettingsTab(
 
                 HorizontalDivider(color = Color(0xFFE2E8F0))
 
-                // Feature 4: Emoji Keyboard
+                // Feature 5: Emoji Keyboard
                 ToggleOptionRow(
-                    title = "4. Emoji Keyboard & Key (ইমোজি কীবোর্ড ও বাটন)",
+                    title = "5. Emoji Keyboard & Key (ইমোজি কীবোর্ড ও বাটন)",
                     description = "Dedicated 😊 emoji key and 8 offline emoji category grids",
                     checked = currentSettings.enableEmoji,
                     onCheckedChange = onEmojiChange
                 )
+            }
+        }
+
+        // Section 2: Stylish Font Styles Gallery & Active Picker
+        if (currentSettings.enableStylishFonts) {
+            FlatCard {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "𝓐",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF2563EB)
+                        )
+                        Column {
+                            Text(
+                                text = "Active Stylish Font (ডিফল্ট ফন্ট নির্বাচন)",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A)
+                            )
+                            Text(
+                                text = "Keyboard-এ [ 𝓐 ] বাটনে ট্যাপ করেও সরাসরি ফন্ট বদলানো যাবে",
+                                fontSize = 12.sp,
+                                color = Color(0xFF64748B)
+                            )
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        StylishFontEngine.ALL_STYLES.forEach { style ->
+                            val isSelected = currentSettings.activeStylishStyle.equals(style.id, ignoreCase = true)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isSelected) Color(0xFFEFF6FF) else Color(0xFFF8FAFC))
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isSelected) Color(0xFF2563EB) else Color(0xFFE2E8F0),
+                                        shape = RoundedCornerShape(6.dp)
+                                    )
+                                    .clickable { onActiveStyleChange(style.id) }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = style.label,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) Color(0xFF1E40AF) else Color(0xFF1E293B)
+                                    )
+                                    Text(
+                                        text = style.preview,
+                                        fontSize = 12.sp,
+                                        color = if (isSelected) Color(0xFF2563EB) else Color(0xFF64748B)
+                                    )
+                                }
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = "Selected",
+                                        tint = Color(0xFF2563EB),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 

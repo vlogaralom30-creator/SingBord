@@ -139,6 +139,85 @@ class SingBordInputMethodService : InputMethodService(),
                             }
                             ic.commitText("$word ", 1)
                         }
+
+                        override fun onCut() {
+                            val ic = currentInputConnection ?: return
+                            ic.performContextMenuAction(android.R.id.cut)
+                        }
+
+                        override fun onCopy() {
+                            val ic = currentInputConnection ?: return
+                            ic.performContextMenuAction(android.R.id.copy)
+                        }
+
+                        override fun onPaste() {
+                            val ic = currentInputConnection ?: return
+                            ic.performContextMenuAction(android.R.id.paste)
+                        }
+
+                        override fun onSelectAll() {
+                            val ic = currentInputConnection ?: return
+                            ic.performContextMenuAction(android.R.id.selectAll)
+                        }
+
+                        override fun onMoveCursorVertical(direction: Int) {
+                            if (direction < 0) {
+                                sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_UP)
+                            } else if (direction > 0) {
+                                sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_DOWN)
+                            }
+                        }
+
+                        override fun onMoveToStart() {
+                            sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_HOME)
+                        }
+
+                        override fun onMoveToEnd() {
+                            sendDownUpKeyEvents(KeyEvent.KEYCODE_MOVE_END)
+                        }
+
+                        override fun onSelectText(direction: Int) {
+                            val keyCode = when (direction) {
+                                -1 -> KeyEvent.KEYCODE_DPAD_LEFT
+                                1 -> KeyEvent.KEYCODE_DPAD_RIGHT
+                                -2 -> KeyEvent.KEYCODE_DPAD_UP
+                                2 -> KeyEvent.KEYCODE_DPAD_DOWN
+                                else -> KeyEvent.KEYCODE_DPAD_LEFT
+                            }
+                            val ic = currentInputConnection ?: return
+                            val now = System.currentTimeMillis()
+                            val downShift = KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_SHIFT_LEFT, 0, KeyEvent.META_SHIFT_ON)
+                            val downKey = KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0, KeyEvent.META_SHIFT_ON)
+                            val upKey = KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0, KeyEvent.META_SHIFT_ON)
+                            val upShift = KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_SHIFT_LEFT, 0, 0)
+                            ic.sendKeyEvent(downShift)
+                            ic.sendKeyEvent(downKey)
+                            ic.sendKeyEvent(upKey)
+                            ic.sendKeyEvent(upShift)
+                        }
+
+                        override fun onVoiceInput() {
+                            try {
+                                val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                    putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                startActivity(intent)
+                            } catch (e: Exception) {
+                                // Ignore if no speech recognizer available
+                            }
+                        }
+
+                        override fun onOpenSettings() {
+                            try {
+                                val intent = android.content.Intent(this@SingBordInputMethodService, MainActivity::class.java).apply {
+                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                startActivity(intent)
+                            } catch (e: Exception) {
+                                // Ignore
+                            }
+                        }
                     }
                 )
             }

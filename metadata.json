@@ -1,6 +1,6 @@
 {
   "name": "SingBord",
-  "description": "Simple, fast 2D zero-gap keyboard with theme templates, keyboard size adjustment, Banglish vocabulary, smart word learning, gestures, and emoji picker.",
+  "description": "Simple, fast 2D zero-gap keyboard with stylish Unicode fonts (Cursive, Bold, Slashed, Double-struck), theme templates, size adjustment, Banglish vocabulary, smart word learning, gestures, and emoji picker.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

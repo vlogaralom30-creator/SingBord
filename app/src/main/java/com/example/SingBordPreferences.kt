@@ -23,7 +23,9 @@ data class KeyboardSettings(
     val enableHaptics: Boolean = true,
     val enableSound: Boolean = false,
     val enableKeyPopup: Boolean = true,
-    val autoCapitalization: Boolean = true
+    val autoCapitalization: Boolean = true,
+    val enableStylishFonts: Boolean = true,
+    val activeStylishStyle: String = "normal"
 )
 
 class SingBordPreferences(context: Context) {
@@ -89,6 +91,14 @@ class SingBordPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_CAPITALIZATION, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_CAPITALIZATION, value).apply()
 
+    var enableStylishFonts: Boolean
+        get() = prefs.getBoolean(KEY_ENABLE_STYLISH_FONTS, true)
+        set(value) = prefs.edit().putBoolean(KEY_ENABLE_STYLISH_FONTS, value).apply()
+
+    var activeStylishStyle: String
+        get() = prefs.getString(KEY_ACTIVE_STYLISH_STYLE, "normal") ?: "normal"
+        set(value) = prefs.edit().putString(KEY_ACTIVE_STYLISH_STYLE, value).apply()
+
     fun getRecentEmojis(): List<String> {
         val raw = prefs.getString(KEY_RECENT_EMOJIS, null) ?: return emptyList()
         return raw.split(",").filter { it.isNotBlank() }
@@ -100,6 +110,24 @@ class SingBordPreferences(context: Context) {
         current.add(0, emoji)
         val trimmed = current.take(35)
         prefs.edit().putString(KEY_RECENT_EMOJIS, trimmed.joinToString(",")).apply()
+    }
+
+    fun getClipboardHistory(): List<String> {
+        val raw = prefs.getString(KEY_CLIPBOARD_HISTORY, null) ?: return emptyList()
+        return raw.split(CLIPBOARD_SEPARATOR).filter { it.isNotBlank() }
+    }
+
+    fun addClipboardItem(text: String) {
+        if (text.isBlank()) return
+        val current = getClipboardHistory().toMutableList()
+        current.remove(text)
+        current.add(0, text)
+        val trimmed = current.take(20)
+        prefs.edit().putString(KEY_CLIPBOARD_HISTORY, trimmed.joinToString(CLIPBOARD_SEPARATOR)).apply()
+    }
+
+    fun clearClipboardHistory() {
+        prefs.edit().remove(KEY_CLIPBOARD_HISTORY).apply()
     }
 
     fun getSettings(): KeyboardSettings {
@@ -116,7 +144,9 @@ class SingBordPreferences(context: Context) {
             enableHaptics = enableHaptics,
             enableSound = enableSound,
             enableKeyPopup = enableKeyPopup,
-            autoCapitalization = autoCapitalization
+            autoCapitalization = autoCapitalization,
+            enableStylishFonts = enableStylishFonts,
+            activeStylishStyle = activeStylishStyle
         )
     }
 
@@ -134,6 +164,10 @@ class SingBordPreferences(context: Context) {
         private const val KEY_ENABLE_SOUND = "enable_sound"
         private const val KEY_ENABLE_KEY_POPUP = "enable_key_popup"
         private const val KEY_AUTO_CAPITALIZATION = "auto_capitalization"
+        private const val KEY_ENABLE_STYLISH_FONTS = "enable_stylish_fonts"
+        private const val KEY_ACTIVE_STYLISH_STYLE = "active_stylish_style"
         private const val KEY_RECENT_EMOJIS = "recent_emojis"
+        private const val KEY_CLIPBOARD_HISTORY = "clipboard_history"
+        private const val CLIPBOARD_SEPARATOR = "<!--SINGBORD_CLIP_SEP-->"
     }
 }
