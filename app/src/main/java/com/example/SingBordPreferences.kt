@@ -28,7 +28,8 @@ data class KeyboardSettings(
     val enableKeyPopup: Boolean = true,
     val autoCapitalization: Boolean = true,
     val enableStylishFonts: Boolean = true,
-    val activeStylishStyle: String = "normal"
+    val activeStylishStyle: String = "normal",
+    val enableKeyAnimation: Boolean = true
 )
 
 class SingBordPreferences(context: Context) {
@@ -114,6 +115,10 @@ class SingBordPreferences(context: Context) {
         get() = prefs.getString(KEY_ACTIVE_STYLISH_STYLE, "normal") ?: "normal"
         set(value) = prefs.edit().putString(KEY_ACTIVE_STYLISH_STYLE, value).apply()
 
+    var enableKeyAnimation: Boolean
+        get() = prefs.getBoolean(KEY_ENABLE_KEY_ANIMATION, true)
+        set(value) = prefs.edit().putBoolean(KEY_ENABLE_KEY_ANIMATION, value).apply()
+
     fun getRecentEmojis(): List<String> {
         val raw = prefs.getString(KEY_RECENT_EMOJIS, null) ?: return emptyList()
         return raw.split(",").filter { it.isNotBlank() }
@@ -178,7 +183,8 @@ class SingBordPreferences(context: Context) {
             enableKeyPopup = enableKeyPopup,
             autoCapitalization = autoCapitalization,
             enableStylishFonts = enableStylishFonts,
-            activeStylishStyle = activeStylishStyle
+            activeStylishStyle = activeStylishStyle,
+            enableKeyAnimation = enableKeyAnimation
         )
     }
 
@@ -201,6 +207,7 @@ class SingBordPreferences(context: Context) {
         private const val KEY_AUTO_CAPITALIZATION = "auto_capitalization"
         private const val KEY_ENABLE_STYLISH_FONTS = "enable_stylish_fonts"
         private const val KEY_ACTIVE_STYLISH_STYLE = "active_stylish_style"
+        private const val KEY_ENABLE_KEY_ANIMATION = "enable_key_animation"
         private const val KEY_RECENT_EMOJIS = "recent_emojis"
         private const val KEY_RECENT_SYMBOLS = "recent_symbols"
         private const val KEY_CLIPBOARD_HISTORY = "clipboard_history"

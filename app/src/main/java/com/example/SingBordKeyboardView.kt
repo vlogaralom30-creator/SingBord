@@ -8,8 +8,18 @@ import android.view.SoundEffectConstants
 import android.view.inputmethod.EditorInfo
 import com.example.data.UserDictionaryRepository
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -958,28 +968,23 @@ fun SingBordKeyboardView(
                         }
                         val shiftIconColor = if (shiftState == ShiftState.OFF) functionTextColor else theme.accentTextColor
 
-                        Box(
-                            modifier = Modifier
-                                .weight(1.5f)
-                                .fillMaxHeight()
-                                .background(shiftBg)
-                                .clickable {
-                                    triggerFeedback()
-                                    shiftState = when (shiftState) {
-                                        ShiftState.OFF -> ShiftState.ON
-                                        ShiftState.ON -> ShiftState.CAPS_LOCK
-                                        ShiftState.CAPS_LOCK -> ShiftState.OFF
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowUpward,
-                                contentDescription = "Shift",
-                                tint = shiftIconColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                        IconKeyButton(
+                            icon = Icons.Default.ArrowUpward,
+                            contentDescription = "Shift",
+                            backgroundColor = shiftBg,
+                            iconColor = shiftIconColor,
+                            pressedColor = keyPressedBg,
+                            enableAnimation = settings.enableKeyAnimation,
+                            modifier = Modifier.weight(1.5f),
+                            onClick = {
+                                triggerFeedback()
+                                shiftState = when (shiftState) {
+                                    ShiftState.OFF -> ShiftState.ON
+                                    ShiftState.ON -> ShiftState.CAPS_LOCK
+                                    ShiftState.CAPS_LOCK -> ShiftState.OFF
+                                }
+                            }
+                        )
 
                         Spacer(
                             modifier = Modifier
@@ -1369,21 +1374,45 @@ fun FlatKeyButton(
     backgroundColor: Color,
     textColor: Color,
     modifier: Modifier = Modifier,
+    pressedColor: Color? = null,
     fontWeight: FontWeight = FontWeight.SemiBold,
     fontSize: TextUnit = 18.sp,
+    enableAnimation: Boolean = true,
     onClick: () -> Unit
 ) {
     var isPressed by remember { mutableStateOf(false) }
+    var touchOffset by remember { mutableStateOf(Offset.Zero) }
+    var keySize by remember { mutableStateOf(IntSize.Zero) }
 
-    val activeBg = if (isPressed) Color(0xFFCBD5E1) else backgroundColor
+    val scale by animateFloatAsState(
+        targetValue = if (enableAnimation && isPressed) 0.88f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "flat_key_scale"
+    )
+
+    val overlayAlpha by animateFloatAsState(
+        targetValue = if (isPressed) 1f else 0f,
+        animationSpec = tween(durationMillis = if (isPressed) 40 else 120),
+        label = "flat_key_overlay"
+    )
+
+    val resolvedPressedColor = pressedColor ?: run {
+        val luminance = (backgroundColor.red * 0.299f + backgroundColor.green * 0.587f + backgroundColor.blue * 0.114f)
+        if (luminance < 0.5f) Color.White.copy(alpha = 0.22f) else Color.Black.copy(alpha = 0.14f)
+    }
 
     Box(
         modifier = modifier
             .fillMaxHeight()
-            .background(activeBg)
+            .onSizeChanged { keySize = it }
+            .background(backgroundColor)
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onPress = {
+                    onPress = { offset ->
+                        touchOffset = offset
                         isPressed = true
                         tryAwaitRelease()
                         isPressed = false
@@ -1393,12 +1422,35 @@ fun FlatKeyButton(
             },
         contentAlignment = Alignment.Center
     ) {
+        if (overlayAlpha > 0.01f) {
+            val radius = maxOf(keySize.width.toFloat(), keySize.height.toFloat(), 100f) * 1.2f
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(alpha = overlayAlpha)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                resolvedPressedColor,
+                                resolvedPressedColor.copy(alpha = (resolvedPressedColor.alpha * 0.3f))
+                            ),
+                            center = touchOffset,
+                            radius = radius
+                        )
+                    )
+            )
+        }
+
         Text(
             text = text,
             color = textColor,
             fontSize = fontSize,
             fontWeight = fontWeight,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            modifier = Modifier.graphicsLayer(
+                scaleX = scale,
+                scaleY = scale
+            )
         )
     }
 }
@@ -1410,18 +1462,43 @@ fun IconKeyButton(
     backgroundColor: Color,
     iconColor: Color,
     modifier: Modifier = Modifier,
+    pressedColor: Color? = null,
+    enableAnimation: Boolean = true,
     onClick: () -> Unit
 ) {
     var isPressed by remember { mutableStateOf(false) }
-    val activeBg = if (isPressed) Color(0xFFCBD5E1) else backgroundColor
+    var touchOffset by remember { mutableStateOf(Offset.Zero) }
+    var keySize by remember { mutableStateOf(IntSize.Zero) }
+
+    val scale by animateFloatAsState(
+        targetValue = if (enableAnimation && isPressed) 0.88f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "icon_key_scale"
+    )
+
+    val overlayAlpha by animateFloatAsState(
+        targetValue = if (isPressed) 1f else 0f,
+        animationSpec = tween(durationMillis = if (isPressed) 40 else 120),
+        label = "icon_key_overlay"
+    )
+
+    val resolvedPressedColor = pressedColor ?: run {
+        val luminance = (backgroundColor.red * 0.299f + backgroundColor.green * 0.587f + backgroundColor.blue * 0.114f)
+        if (luminance < 0.5f) Color.White.copy(alpha = 0.22f) else Color.Black.copy(alpha = 0.14f)
+    }
 
     Box(
         modifier = modifier
             .fillMaxHeight()
-            .background(activeBg)
+            .onSizeChanged { keySize = it }
+            .background(backgroundColor)
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onPress = {
+                    onPress = { offset ->
+                        touchOffset = offset
                         isPressed = true
                         tryAwaitRelease()
                         isPressed = false
@@ -1431,11 +1508,35 @@ fun IconKeyButton(
             },
         contentAlignment = Alignment.Center
     ) {
+        if (overlayAlpha > 0.01f) {
+            val radius = maxOf(keySize.width.toFloat(), keySize.height.toFloat(), 100f) * 1.2f
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(alpha = overlayAlpha)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                resolvedPressedColor,
+                                resolvedPressedColor.copy(alpha = (resolvedPressedColor.alpha * 0.3f))
+                            ),
+                            center = touchOffset,
+                            radius = radius
+                        )
+                    )
+            )
+        }
+
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = iconColor,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier
+                .size(20.dp)
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale
+                )
         )
     }
 }
@@ -1446,6 +1547,7 @@ fun EnterKeyButton(
     accentColor: Color = Color(0xFF2563EB),
     accentTextColor: Color = Color.White,
     modifier: Modifier = Modifier,
+    enableAnimation: Boolean = true,
     onClick: () -> Unit
 ) {
     val actionId = editorInfo?.let { info ->
@@ -1464,15 +1566,33 @@ fun EnterKeyButton(
     }
 
     var isPressed by remember { mutableStateOf(false) }
-    val activeBg = if (isPressed) accentColor.copy(alpha = 0.8f) else accentColor
+    var touchOffset by remember { mutableStateOf(Offset.Zero) }
+    var keySize by remember { mutableStateOf(IntSize.Zero) }
+
+    val scale by animateFloatAsState(
+        targetValue = if (enableAnimation && isPressed) 0.88f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "enter_key_scale"
+    )
+
+    val overlayAlpha by animateFloatAsState(
+        targetValue = if (isPressed) 1f else 0f,
+        animationSpec = tween(durationMillis = if (isPressed) 40 else 120),
+        label = "enter_key_overlay"
+    )
 
     Box(
         modifier = modifier
             .fillMaxHeight()
-            .background(activeBg)
+            .onSizeChanged { keySize = it }
+            .background(accentColor)
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onPress = {
+                    onPress = { offset ->
+                        touchOffset = offset
                         isPressed = true
                         tryAwaitRelease()
                         isPressed = false
@@ -1482,11 +1602,35 @@ fun EnterKeyButton(
             },
         contentAlignment = Alignment.Center
     ) {
+        if (overlayAlpha > 0.01f) {
+            val radius = maxOf(keySize.width.toFloat(), keySize.height.toFloat(), 100f) * 1.2f
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(alpha = overlayAlpha)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.35f),
+                                Color.Black.copy(alpha = 0.2f)
+                            ),
+                            center = touchOffset,
+                            radius = radius
+                        )
+                    )
+            )
+        }
+
         Icon(
             imageVector = enterIcon,
             contentDescription = enterDescription,
             tint = accentTextColor,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier
+                .size(20.dp)
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale
+                )
         )
     }
 }
@@ -1496,20 +1640,44 @@ fun RepeatingBackspaceKey(
     backgroundColor: Color,
     iconColor: Color,
     modifier: Modifier = Modifier,
+    pressedColor: Color? = null,
+    enableAnimation: Boolean = true,
     onDelete: () -> Unit
 ) {
     var isPressed by remember { mutableStateOf(false) }
+    var touchOffset by remember { mutableStateOf(Offset.Zero) }
+    var keySize by remember { mutableStateOf(IntSize.Zero) }
     val coroutineScope = rememberCoroutineScope()
 
-    val activeBg = if (isPressed) Color(0xFFCBD5E1) else backgroundColor
+    val scale by animateFloatAsState(
+        targetValue = if (enableAnimation && isPressed) 0.88f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "backspace_key_scale"
+    )
+
+    val overlayAlpha by animateFloatAsState(
+        targetValue = if (isPressed) 1f else 0f,
+        animationSpec = tween(durationMillis = if (isPressed) 40 else 120),
+        label = "backspace_key_overlay"
+    )
+
+    val resolvedPressedColor = pressedColor ?: run {
+        val luminance = (backgroundColor.red * 0.299f + backgroundColor.green * 0.587f + backgroundColor.blue * 0.114f)
+        if (luminance < 0.5f) Color.White.copy(alpha = 0.22f) else Color.Black.copy(alpha = 0.14f)
+    }
 
     Box(
         modifier = modifier
             .fillMaxHeight()
-            .background(activeBg)
+            .onSizeChanged { keySize = it }
+            .background(backgroundColor)
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onPress = {
+                    onPress = { offset ->
+                        touchOffset = offset
                         isPressed = true
                         onDelete()
                         val job = coroutineScope.launch {
@@ -1527,11 +1695,35 @@ fun RepeatingBackspaceKey(
             },
         contentAlignment = Alignment.Center
     ) {
+        if (overlayAlpha > 0.01f) {
+            val radius = maxOf(keySize.width.toFloat(), keySize.height.toFloat(), 100f) * 1.2f
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(alpha = overlayAlpha)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                resolvedPressedColor,
+                                resolvedPressedColor.copy(alpha = (resolvedPressedColor.alpha * 0.3f))
+                            ),
+                            center = touchOffset,
+                            radius = radius
+                        )
+                    )
+            )
+        }
+
         Icon(
             imageVector = Icons.AutoMirrored.Filled.Backspace,
             contentDescription = "Delete",
             tint = iconColor,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier
+                .size(20.dp)
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale
+                )
         )
     }
 }
@@ -1542,6 +1734,7 @@ fun SpacebarKey(
     pressedColor: Color = Color(0xFFE2E8F0),
     dragColor: Color = Color(0xFFCBD5E1),
     enableGestures: Boolean = true,
+    enableAnimation: Boolean = true,
     modifier: Modifier = Modifier,
     onSpace: () -> Unit,
     onDoubleSpacePeriod: () -> Unit,
@@ -1551,8 +1744,25 @@ fun SpacebarKey(
     var isPressed by remember { mutableStateOf(false) }
     var isDragging by remember { mutableStateOf(false) }
     var lastTapTime by remember { mutableStateOf(0L) }
+    var touchOffset by remember { mutableStateOf(Offset.Zero) }
+    var keySize by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
     val stepThresholdPx = with(density) { 16.dp.toPx() }
+
+    val scale by animateFloatAsState(
+        targetValue = if (enableAnimation && isPressed && !isDragging) 0.94f else 1.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "spacebar_scale"
+    )
+
+    val overlayAlpha by animateFloatAsState(
+        targetValue = if (isPressed || isDragging) 1f else 0f,
+        animationSpec = tween(durationMillis = 60),
+        label = "spacebar_overlay_alpha"
+    )
 
     val currentBg = when {
         isDragging -> dragColor
@@ -1563,11 +1773,13 @@ fun SpacebarKey(
     Box(
         modifier = modifier
             .fillMaxHeight()
+            .onSizeChanged { keySize = it }
             .background(currentBg)
             .pointerInput(enableGestures) {
                 if (!enableGestures) {
                     detectTapGestures(
-                        onPress = {
+                        onPress = { offset ->
+                            touchOffset = offset
                             isPressed = true
                             tryAwaitRelease()
                             isPressed = false
@@ -1587,6 +1799,7 @@ fun SpacebarKey(
                 } else {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
+                        touchOffset = down.position
                         isPressed = true
                         var accumulatedDx = 0f
                         var hasDragged = false
@@ -1636,11 +1849,34 @@ fun SpacebarKey(
             },
         contentAlignment = Alignment.Center
     ) {
+        if (overlayAlpha > 0.01f) {
+            val radius = maxOf(keySize.width.toFloat(), keySize.height.toFloat(), 100f) * 1.2f
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(alpha = overlayAlpha)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.25f),
+                                Color.Transparent
+                            ),
+                            center = touchOffset,
+                            radius = radius
+                        )
+                    )
+            )
+        }
+
         Text(
             text = if (enableGestures && isDragging) "‹ ── Slide cursor ── ›" else "SingBord",
             fontSize = if (isDragging) 11.sp else 12.sp,
             color = if (isDragging) Color(0xFF1E293B) else Color(0xFF94A3B8),
-            fontWeight = if (isDragging) FontWeight.SemiBold else FontWeight.Normal
+            fontWeight = if (isDragging) FontWeight.SemiBold else FontWeight.Normal,
+            modifier = Modifier.graphicsLayer(
+                scaleX = scale,
+                scaleY = scale
+            )
         )
     }
 }

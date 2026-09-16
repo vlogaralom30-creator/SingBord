@@ -97,6 +97,7 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
     var enableSound by remember { mutableStateOf(prefs.enableSound) }
     var enableKeyPopup by remember { mutableStateOf(prefs.enableKeyPopup) }
     var autoCapitalization by remember { mutableStateOf(prefs.autoCapitalization) }
+    var enableKeyAnimation by remember { mutableStateOf(prefs.enableKeyAnimation) }
     var enableStylishFonts by remember { mutableStateOf(prefs.enableStylishFonts) }
     var activeStylishStyle by remember { mutableStateOf(prefs.activeStylishStyle) }
 
@@ -145,6 +146,7 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
         enableHaptics = enableHaptics,
         enableSound = enableSound,
         enableKeyPopup = enableKeyPopup,
+        enableKeyAnimation = enableKeyAnimation,
         autoCapitalization = autoCapitalization,
         enableStylishFonts = enableStylishFonts,
         activeStylishStyle = activeStylishStyle
@@ -282,6 +284,10 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
                         onKeyPopupChange = {
                             enableKeyPopup = it
                             prefs.enableKeyPopup = it
+                        },
+                        onKeyAnimationChange = {
+                            enableKeyAnimation = it
+                            prefs.enableKeyAnimation = it
                         },
                         onAutoCapChange = {
                             autoCapitalization = it
@@ -1231,6 +1237,7 @@ fun KeyboardSettingsTab(
     onNumberRowChange: (Boolean) -> Unit,
     onSuggestionsChange: (Boolean) -> Unit,
     onKeyPopupChange: (Boolean) -> Unit,
+    onKeyAnimationChange: (Boolean) -> Unit,
     onAutoCapChange: (Boolean) -> Unit,
     onHapticsChange: (Boolean) -> Unit,
     onSoundChange: (Boolean) -> Unit,
@@ -1580,6 +1587,16 @@ fun KeyboardSettingsTab(
                     description = "Show visual character badge when pressing keys",
                     checked = currentSettings.enableKeyPopup,
                     onCheckedChange = onKeyPopupChange
+                )
+
+                HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                // Key Press Animations
+                ToggleOptionRow(
+                    title = "Key Animation Effects",
+                    description = "Tactile spring scale & radial ripple press animation on key touch",
+                    checked = currentSettings.enableKeyAnimation,
+                    onCheckedChange = onKeyAnimationChange
                 )
 
                 HorizontalDivider(color = Color(0xFFE2E8F0))
