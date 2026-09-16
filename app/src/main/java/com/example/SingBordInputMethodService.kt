@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.inputmethodservice.InputMethodService
 import android.text.InputType
+import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.mutableStateOf
@@ -115,6 +116,28 @@ class SingBordInputMethodService : InputMethodService(),
                         override fun onSpace() {
                             val ic = currentInputConnection ?: return
                             ic.commitText(" ", 1)
+                        }
+
+                        override fun onDoubleSpacePeriod() {
+                            val ic = currentInputConnection ?: return
+                            ic.deleteSurroundingText(1, 0)
+                            ic.commitText(". ", 1)
+                        }
+
+                        override fun onMoveCursor(direction: Int) {
+                            if (direction < 0) {
+                                sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_LEFT)
+                            } else if (direction > 0) {
+                                sendDownUpKeyEvents(KeyEvent.KEYCODE_DPAD_RIGHT)
+                            }
+                        }
+
+                        override fun onWordSelected(word: String, prefixLength: Int) {
+                            val ic = currentInputConnection ?: return
+                            if (prefixLength > 0) {
+                                ic.deleteSurroundingText(prefixLength, 0)
+                            }
+                            ic.commitText("$word ", 1)
                         }
                     }
                 )
