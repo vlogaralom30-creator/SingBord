@@ -153,7 +153,34 @@ object KeyboardThemes {
         CYBER_CRIMSON
     )
 
+    val LIGHT_THEMES = ALL_THEMES.filter { !it.isDark }
+    val DARK_THEMES = ALL_THEMES.filter { it.isDark }
+
     fun getTheme(id: String): KeyboardThemePalette {
         return ALL_THEMES.find { it.id.equals(id, ignoreCase = true) } ?: CLEAN_LIGHT
+    }
+
+    fun resolveTheme(
+        themeId: String,
+        followSystemTheme: Boolean,
+        lightThemeId: String,
+        darkThemeId: String,
+        isSystemDark: Boolean
+    ): KeyboardThemePalette {
+        if (followSystemTheme) {
+            val targetId = if (isSystemDark) darkThemeId else lightThemeId
+            return getTheme(targetId)
+        }
+        return getTheme(themeId)
+    }
+
+    fun resolveTheme(settings: KeyboardSettings, isSystemDark: Boolean): KeyboardThemePalette {
+        return resolveTheme(
+            themeId = settings.themeId,
+            followSystemTheme = settings.followSystemTheme,
+            lightThemeId = settings.lightThemeId,
+            darkThemeId = settings.darkThemeId,
+            isSystemDark = isSystemDark
+        )
     }
 }

@@ -12,6 +12,9 @@ enum class KeyboardSize(val label: String, val heightFactor: Float) {
 
 data class KeyboardSettings(
     val themeId: String = "clean_light",
+    val followSystemTheme: Boolean = false,
+    val lightThemeId: String = "clean_light",
+    val darkThemeId: String = "oled_black",
     val lineThicknessDp: Float = 1.0f,
     val keyboardSize: KeyboardSize = KeyboardSize.NORMAL,
     val showNumberRow: Boolean = true,
@@ -35,6 +38,18 @@ class SingBordPreferences(context: Context) {
     var themeId: String
         get() = prefs.getString(KEY_THEME_ID, "clean_light") ?: "clean_light"
         set(value) = prefs.edit().putString(KEY_THEME_ID, value).apply()
+
+    var followSystemTheme: Boolean
+        get() = prefs.getBoolean(KEY_FOLLOW_SYSTEM_THEME, false)
+        set(value) = prefs.edit().putBoolean(KEY_FOLLOW_SYSTEM_THEME, value).apply()
+
+    var lightThemeId: String
+        get() = prefs.getString(KEY_LIGHT_THEME_ID, "clean_light") ?: "clean_light"
+        set(value) = prefs.edit().putString(KEY_LIGHT_THEME_ID, value).apply()
+
+    var darkThemeId: String
+        get() = prefs.getString(KEY_DARK_THEME_ID, "oled_black") ?: "oled_black"
+        set(value) = prefs.edit().putString(KEY_DARK_THEME_ID, value).apply()
 
     var lineThicknessDp: Float
         get() = prefs.getFloat(KEY_LINE_THICKNESS, 1.5f)
@@ -112,6 +127,20 @@ class SingBordPreferences(context: Context) {
         prefs.edit().putString(KEY_RECENT_EMOJIS, trimmed.joinToString(",")).apply()
     }
 
+    fun getRecentSymbols(): List<String> {
+        val raw = prefs.getString(KEY_RECENT_SYMBOLS, null) ?: return emptyList()
+        return raw.split(SYMBOL_SEPARATOR).filter { it.isNotBlank() }
+    }
+
+    fun addRecentSymbol(symbol: String) {
+        if (symbol.isBlank()) return
+        val current = getRecentSymbols().toMutableList()
+        current.remove(symbol)
+        current.add(0, symbol)
+        val trimmed = current.take(35)
+        prefs.edit().putString(KEY_RECENT_SYMBOLS, trimmed.joinToString(SYMBOL_SEPARATOR)).apply()
+    }
+
     fun getClipboardHistory(): List<String> {
         val raw = prefs.getString(KEY_CLIPBOARD_HISTORY, null) ?: return emptyList()
         return raw.split(CLIPBOARD_SEPARATOR).filter { it.isNotBlank() }
@@ -133,6 +162,9 @@ class SingBordPreferences(context: Context) {
     fun getSettings(): KeyboardSettings {
         return KeyboardSettings(
             themeId = themeId,
+            followSystemTheme = followSystemTheme,
+            lightThemeId = lightThemeId,
+            darkThemeId = darkThemeId,
             lineThicknessDp = lineThicknessDp,
             keyboardSize = keyboardSize,
             showNumberRow = showNumberRow,
@@ -152,6 +184,9 @@ class SingBordPreferences(context: Context) {
 
     companion object {
         private const val KEY_THEME_ID = "theme_id"
+        private const val KEY_FOLLOW_SYSTEM_THEME = "follow_system_theme"
+        private const val KEY_LIGHT_THEME_ID = "light_theme_id"
+        private const val KEY_DARK_THEME_ID = "dark_theme_id"
         private const val KEY_LINE_THICKNESS = "line_thickness_dp"
         private const val KEY_KEYBOARD_SIZE = "keyboard_size"
         private const val KEY_SHOW_NUMBER_ROW = "show_number_row"
@@ -167,7 +202,9 @@ class SingBordPreferences(context: Context) {
         private const val KEY_ENABLE_STYLISH_FONTS = "enable_stylish_fonts"
         private const val KEY_ACTIVE_STYLISH_STYLE = "active_stylish_style"
         private const val KEY_RECENT_EMOJIS = "recent_emojis"
+        private const val KEY_RECENT_SYMBOLS = "recent_symbols"
         private const val KEY_CLIPBOARD_HISTORY = "clipboard_history"
         private const val CLIPBOARD_SEPARATOR = "<!--SINGBORD_CLIP_SEP-->"
+        private const val SYMBOL_SEPARATOR = "<!--SINGBORD_SYM_SEP-->"
     }
 }

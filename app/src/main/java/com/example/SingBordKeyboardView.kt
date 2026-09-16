@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -91,6 +93,7 @@ enum class ToolbarMode {
 
 enum class KeyboardSubPanel {
     NONE,
+    SYMBOLS_STUDIO,
     TEXT_EDITOR,
     CLIPBOARD,
     NUMBER_DIALER,
@@ -223,8 +226,21 @@ fun SingBordKeyboardView(
         }
     }
 
-    val theme = remember(activeThemeId) {
-        KeyboardThemes.getTheme(activeThemeId)
+    val isSystemDark = isSystemInDarkTheme()
+    val theme = remember(
+        activeThemeId,
+        settings.followSystemTheme,
+        settings.lightThemeId,
+        settings.darkThemeId,
+        isSystemDark
+    ) {
+        KeyboardThemes.resolveTheme(
+            themeId = activeThemeId,
+            followSystemTheme = settings.followSystemTheme,
+            lightThemeId = settings.lightThemeId,
+            darkThemeId = settings.darkThemeId,
+            isSystemDark = isSystemDark
+        )
     }
 
     val keyHeight = (46 * settings.keyboardSize.heightFactor).dp
@@ -309,6 +325,18 @@ fun SingBordKeyboardView(
                                 activeSubPanel = KeyboardSubPanel.NONE
                                 keyboardMode = KeyboardMode.EMOJI
                                 toolbarMode = ToolbarMode.SUGGESTIONS
+                            }
+                        )
+
+                        ToolIconItem(
+                            icon = Icons.Default.AutoAwesome,
+                            contentDescription = "Symbols Studio",
+                            theme = theme,
+                            isActive = activeSubPanel == KeyboardSubPanel.SYMBOLS_STUDIO,
+                            onClick = {
+                                triggerFeedback()
+                                keyboardMode = KeyboardMode.ALPHA
+                                activeSubPanel = if (activeSubPanel == KeyboardSubPanel.SYMBOLS_STUDIO) KeyboardSubPanel.NONE else KeyboardSubPanel.SYMBOLS_STUDIO
                             }
                         )
 
@@ -518,6 +546,18 @@ fun SingBordKeyboardView(
 
             if (activeSubPanel != KeyboardSubPanel.NONE) {
                 when (activeSubPanel) {
+                    KeyboardSubPanel.SYMBOLS_STUDIO -> {
+                        SymbolsSubPanel(
+                            theme = theme,
+                            lineThicknessDp = lineThicknessDp,
+                            gridBorderColor = gridBorderColor,
+                            totalHeight = totalSubPanelHeight,
+                            listener = listener,
+                            prefs = prefs,
+                            onClose = { activeSubPanel = KeyboardSubPanel.NONE },
+                            triggerFeedback = { triggerFeedback() }
+                        )
+                    }
                     KeyboardSubPanel.TEXT_EDITOR -> {
                         TextEditorSubPanel(
                             theme = theme,
@@ -556,6 +596,9 @@ fun SingBordKeyboardView(
                     KeyboardSubPanel.THEME_PICKER -> {
                         ThemePickerSubPanel(
                             currentThemeId = activeThemeId,
+                            settings = settings,
+                            prefs = prefs,
+                            isSystemDark = isSystemDark,
                             theme = theme,
                             lineThicknessDp = lineThicknessDp,
                             gridBorderColor = gridBorderColor,
@@ -563,6 +606,13 @@ fun SingBordKeyboardView(
                             onThemeSelect = { newTheme ->
                                 activeThemeId = newTheme.id
                                 prefs.themeId = newTheme.id
+                                if (settings.followSystemTheme) {
+                                    if (newTheme.isDark) {
+                                        prefs.darkThemeId = newTheme.id
+                                    } else {
+                                        prefs.lightThemeId = newTheme.id
+                                    }
+                                }
                                 activeSubPanel = KeyboardSubPanel.NONE
                             },
                             onClose = { activeSubPanel = KeyboardSubPanel.NONE },
@@ -620,6 +670,41 @@ fun SingBordKeyboardView(
                             Text(
                                 text = category.icon,
                                 fontSize = 16.sp
+                            )
+                        }
+                    }
+
+                    Spacer(
+                        modifier = Modifier
+                            .width(lineThicknessDp)
+                            .fillMaxHeight()
+                            .background(gridBorderColor)
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .fillMaxHeight()
+                            .background(theme.accentColor.copy(alpha = 0.15f))
+                            .clickable {
+                                triggerFeedback()
+                                keyboardMode = KeyboardMode.ALPHA
+                                activeSubPanel = KeyboardSubPanel.SYMBOLS_STUDIO
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "✦",
+                                fontSize = 13.sp,
+                                color = theme.accentColor
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "Symbols",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = theme.accentColor
                             )
                         }
                     }
@@ -2100,6 +2185,9 @@ fun NumberDialerSubPanel(
 @Composable
 fun ThemePickerSubPanel(
     currentThemeId: String,
+    settings: KeyboardSettings,
+    prefs: SingBordPreferences,
+    isSystemDark: Boolean,
     theme: KeyboardThemePalette,
     lineThicknessDp: androidx.compose.ui.unit.Dp,
     gridBorderColor: Color,
@@ -2108,16 +2196,19 @@ fun ThemePickerSubPanel(
     onClose: () -> Unit,
     triggerFeedback: () -> Unit
 ) {
+    var isAutoSystem by remember { mutableStateOf(prefs.followSystemTheme) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .height(totalHeight)
             .background(theme.keyboardBg)
     ) {
+        // Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(34.dp)
+                .height(32.dp)
                 .background(theme.functionKeyBg)
                 .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -2125,12 +2216,12 @@ fun ThemePickerSubPanel(
             Icon(
                 imageVector = Icons.Default.Palette,
                 contentDescription = null,
-                tint = theme.functionTextColor,
-                modifier = Modifier.size(16.dp)
+                tint = theme.accentColor,
+                modifier = Modifier.size(15.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = "Choose Keyboard Theme",
+                text = "Themes & Appearance",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 color = theme.functionTextColor,
@@ -2157,61 +2248,137 @@ fun ThemePickerSubPanel(
 
         Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
 
+        // Auto System Dark/Light Toggle Strip
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(36.dp)
+                .background(if (isAutoSystem) theme.accentColor.copy(alpha = 0.15f) else theme.candidateBg)
+                .clickable {
+                    triggerFeedback()
+                    val newVal = !isAutoSystem
+                    isAutoSystem = newVal
+                    prefs.followSystemTheme = newVal
+                }
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = if (isAutoSystem) theme.accentColor else theme.functionTextColor,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Column {
+                    Text(
+                        text = "Auto Switch (System Dark/Light)",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isAutoSystem) theme.accentColor else theme.keyTextColor
+                    )
+                    Text(
+                        text = if (isAutoSystem) "Syncing with OS (${if (isSystemDark) "Dark Mode" else "Light Mode"})" else "Manual static theme mode",
+                        fontSize = 9.sp,
+                        color = theme.functionTextColor
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isAutoSystem) theme.accentColor else theme.functionKeyBg)
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = if (isAutoSystem) "AUTO ON ✓" else "OFF",
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isAutoSystem) theme.accentTextColor else theme.functionTextColor
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+
+        // Grid of Themes
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
                 .background(theme.keyBg),
-            contentPadding = PaddingValues(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            contentPadding = PaddingValues(5.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             items(KeyboardThemes.ALL_THEMES) { itemTheme ->
                 val isSelected = itemTheme.id.equals(currentThemeId, ignoreCase = true)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clip(RoundedCornerShape(4.dp))
                         .background(itemTheme.keyboardBg)
                         .border(
-                            width = if (isSelected) 2.dp else 1.dp,
-                            color = if (isSelected) itemTheme.accentColor else itemTheme.gridBorderColor
+                            width = if (isSelected) 1.5.dp else 0.5.dp,
+                            color = if (isSelected) itemTheme.accentColor else itemTheme.gridBorderColor,
+                            shape = RoundedCornerShape(4.dp)
                         )
                         .clickable {
                             triggerFeedback()
                             onThemeSelect(itemTheme)
                         }
-                        .padding(8.dp)
+                        .padding(6.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(24.dp)
+                                .size(22.dp)
+                                .clip(RoundedCornerShape(3.dp))
                                 .background(itemTheme.keyBg)
-                                .border(1.dp, itemTheme.accentColor),
+                                .border(1.dp, itemTheme.accentColor, RoundedCornerShape(3.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = "A",
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = itemTheme.keyTextColor
                             )
                         }
                         Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = itemTheme.name,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = itemTheme.keyTextColor,
+                                    maxLines = 1,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                if (itemTheme.isDark) {
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "🌙",
+                                        fontSize = 8.sp
+                                    )
+                                } else {
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "☀️",
+                                        fontSize = 8.sp
+                                    )
+                                }
+                            }
                             Text(
-                                text = itemTheme.name,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = itemTheme.keyTextColor,
-                                maxLines = 1
-                            )
-                            Text(
-                                text = if (isSelected) "Active" else itemTheme.subtitle,
-                                fontSize = 10.sp,
+                                text = if (isSelected) "Active ✓" else itemTheme.subtitle,
+                                fontSize = 9.sp,
                                 color = if (isSelected) itemTheme.accentColor else itemTheme.functionTextColor,
                                 maxLines = 1
                             )
@@ -2226,11 +2393,11 @@ fun ThemePickerSubPanel(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(38.dp)
+                .height(36.dp)
         ) {
             FlatKeyButton(
                 text = "Back to Keyboard",
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 backgroundColor = theme.accentColor,
                 textColor = theme.accentTextColor,
                 fontWeight = FontWeight.Bold,
@@ -2381,6 +2548,205 @@ fun FontPickerSubPanel(
                 onClick = {
                     triggerFeedback()
                     onClose()
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun SymbolsSubPanel(
+    theme: KeyboardThemePalette,
+    lineThicknessDp: androidx.compose.ui.unit.Dp,
+    gridBorderColor: Color,
+    totalHeight: androidx.compose.ui.unit.Dp,
+    listener: KeyboardActionListener?,
+    prefs: SingBordPreferences,
+    onClose: () -> Unit,
+    triggerFeedback: () -> Unit
+) {
+    var selectedCategory by remember { mutableStateOf(SymbolCategory.STARS) }
+    var recentSymbols by remember { mutableStateOf(prefs.getRecentSymbols()) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(totalHeight)
+            .background(theme.keyboardBg)
+    ) {
+        // Top Header: Title & Close Button
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(34.dp)
+                .background(theme.functionKeyBg)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.AutoAwesome,
+                contentDescription = null,
+                tint = theme.accentColor,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "Stylish Symbols Studio",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = theme.functionTextColor,
+                modifier = Modifier.weight(1f)
+            )
+            Box(
+                modifier = Modifier
+                    .width(36.dp)
+                    .fillMaxHeight()
+                    .clickable {
+                        triggerFeedback()
+                        onClose()
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Close",
+                    tint = theme.functionTextColor,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+
+        // Horizontal Category Tabs
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(36.dp)
+                .background(theme.functionKeyBg),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            items(SymbolCategory.values()) { category ->
+                val isSelected = selectedCategory == category
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .background(if (isSelected) theme.accentColor.copy(alpha = 0.25f) else Color.Transparent)
+                        .clickable {
+                            triggerFeedback()
+                            selectedCategory = category
+                        }
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = category.icon,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = category.title,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) theme.accentColor else theme.functionTextColor
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+            }
+        }
+
+        Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+
+        // Symbols Grid Area
+        val currentSymbols = remember(selectedCategory, recentSymbols) {
+            SymbolData.getSymbols(selectedCategory, recentSymbols)
+        }
+
+        val isWideItem = selectedCategory == SymbolCategory.KAOMOJI ||
+                selectedCategory == SymbolCategory.COMBOS ||
+                selectedCategory == SymbolCategory.LINES
+
+        LazyVerticalGrid(
+            columns = if (isWideItem) GridCells.Adaptive(minSize = 78.dp) else GridCells.Adaptive(minSize = 38.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .background(theme.candidateBg),
+            contentPadding = PaddingValues(3.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            items(currentSymbols) { sym ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(38.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(theme.keyBg)
+                        .border(width = 0.5.dp, color = theme.gridBorderColor.copy(alpha = 0.5f), shape = RoundedCornerShape(4.dp))
+                        .clickable {
+                            triggerFeedback()
+                            listener?.onTextEntered(sym)
+                            prefs.addRecentSymbol(sym)
+                            recentSymbols = prefs.getRecentSymbols()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = sym,
+                        fontSize = if (isWideItem) 12.sp else 16.sp,
+                        color = theme.keyTextColor,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
+
+        // Bottom Action Row (ABC, Space, Backspace)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(38.dp)
+                .background(theme.functionKeyBg)
+        ) {
+            FlatKeyButton(
+                text = "ABC",
+                fontSize = 12.sp,
+                backgroundColor = theme.accentColor,
+                textColor = theme.accentTextColor,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1.3f),
+                onClick = {
+                    triggerFeedback()
+                    onClose()
+                }
+            )
+
+            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+
+            SpacebarKey(
+                backgroundColor = theme.keyBg,
+                modifier = Modifier.weight(3.5f),
+                onSpace = { listener?.onSpace() },
+                onDoubleSpacePeriod = { listener?.onDoubleSpacePeriod() },
+                onMoveCursor = { dir -> listener?.onMoveCursor(dir) },
+                triggerFeedback = { triggerFeedback() }
+            )
+
+            Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
+
+            RepeatingBackspaceKey(
+                backgroundColor = theme.functionKeyBg,
+                iconColor = theme.functionTextColor,
+                modifier = Modifier.weight(1.2f),
+                onDelete = {
+                    triggerFeedback()
+                    listener?.onDelete()
                 }
             )
         }

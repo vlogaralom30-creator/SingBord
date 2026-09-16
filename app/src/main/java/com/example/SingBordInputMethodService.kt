@@ -246,6 +246,11 @@ class SingBordInputMethodService : InputMethodService(),
         super.onFinishInputView(finishingInput)
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        settingsState.value = prefs.getSettings()
+    }
+
     override fun onDestroy() {
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         try {

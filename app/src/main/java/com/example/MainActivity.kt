@@ -13,6 +13,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -81,6 +82,9 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
 
     // State for all preferences
     var themeId by remember { mutableStateOf(prefs.themeId) }
+    var followSystemTheme by remember { mutableStateOf(prefs.followSystemTheme) }
+    var lightThemeId by remember { mutableStateOf(prefs.lightThemeId) }
+    var darkThemeId by remember { mutableStateOf(prefs.darkThemeId) }
     var lineThicknessDp by remember { mutableStateOf(prefs.lineThicknessDp) }
     var keyboardSize by remember { mutableStateOf(prefs.keyboardSize) }
     var showNumberRow by remember { mutableStateOf(prefs.showNumberRow) }
@@ -127,6 +131,9 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
 
     val currentSettings = KeyboardSettings(
         themeId = themeId,
+        followSystemTheme = followSystemTheme,
+        lightThemeId = lightThemeId,
+        darkThemeId = darkThemeId,
         lineThicknessDp = lineThicknessDp,
         keyboardSize = keyboardSize,
         showNumberRow = showNumberRow,
@@ -217,6 +224,18 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
                         onThemeSelected = { newThemeId ->
                             themeId = newThemeId
                             prefs.themeId = newThemeId
+                        },
+                        onFollowSystemThemeChange = {
+                            followSystemTheme = it
+                            prefs.followSystemTheme = it
+                        },
+                        onLightThemeSelected = {
+                            lightThemeId = it
+                            prefs.lightThemeId = it
+                        },
+                        onDarkThemeSelected = {
+                            darkThemeId = it
+                            prefs.darkThemeId = it
                         }
                     )
                 }
@@ -224,6 +243,10 @@ fun MainSettingsScreen(prefs: SingBordPreferences) {
                     KeyboardSettingsTab(
                         currentSettings = currentSettings,
                         prefs = prefs,
+                        onFollowSystemThemeChange = {
+                            followSystemTheme = it
+                            prefs.followSystemTheme = it
+                        },
                         onBanglishChange = {
                             enableBanglish = it
                             prefs.enableBanglish = it
@@ -742,10 +765,20 @@ fun KeyboardHomeTab(
 fun KeyboardThemesTab(
     currentThemeId: String,
     currentSettings: KeyboardSettings,
-    onThemeSelected: (String) -> Unit
+    onThemeSelected: (String) -> Unit,
+    onFollowSystemThemeChange: (Boolean) -> Unit,
+    onLightThemeSelected: (String) -> Unit,
+    onDarkThemeSelected: (String) -> Unit
 ) {
-    val activeTheme = remember(currentThemeId) {
-        KeyboardThemes.getTheme(currentThemeId)
+    val isSystemDark = isSystemInDarkTheme()
+    val activeTheme = remember(
+        currentSettings.followSystemTheme,
+        currentSettings.themeId,
+        currentSettings.lightThemeId,
+        currentSettings.darkThemeId,
+        isSystemDark
+    ) {
+        KeyboardThemes.resolveTheme(currentSettings, isSystemDark)
     }
 
     Column(
@@ -791,7 +824,7 @@ fun KeyboardThemesTab(
                                 color = Color(0xFF0F172A)
                             )
                             Text(
-                                text = "7 Handcrafted Styles • 60fps Smooth Typing",
+                                text = "${KeyboardThemes.ALL_THEMES.size} Handcrafted Styles • 60fps Zero-Lag",
                                 fontSize = 12.sp,
                                 color = Color(0xFF64748B)
                             )
@@ -822,21 +855,183 @@ fun KeyboardThemesTab(
             }
         }
 
+        // Auto Dark/Light Theme Switching Card
+        FlatCard {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .background(Color(0xFFEEF2FF), RoundedCornerShape(8.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = Color(0xFF4F46E5),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "Auto Switch with System Theme",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A)
+                            )
+                            Text(
+                                text = "Switch light/dark themes according to OS system theme",
+                                fontSize = 11.sp,
+                                color = Color(0xFF64748B)
+                            )
+                        }
+                    }
+
+                    Switch(
+                        checked = currentSettings.followSystemTheme,
+                        onCheckedChange = onFollowSystemThemeChange,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = Color(0xFF2563EB)
+                        )
+                    )
+                }
+
+                // System status badge
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (isSystemDark) Color(0xFF0F172A) else Color(0xFFFEF3C7))
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (isSystemDark) "🌙 Android System is currently Dark" else "☀️ Android System is currently Light",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSystemDark) Color(0xFFE2E8F0) else Color(0xFF92400E)
+                    )
+                    Text(
+                        text = "Active: ${activeTheme.name}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSystemDark) Color(0xFF93C5FD) else Color(0xFFB45309)
+                    )
+                }
+
+                if (currentSettings.followSystemTheme) {
+                    HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                    // Light theme target
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "☀️ Preferred Light Theme (Day / Light Mode)",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF334155)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            KeyboardThemes.LIGHT_THEMES.forEach { lightT ->
+                                val isTarget = lightT.id == currentSettings.lightThemeId
+                                FilterChip(
+                                    selected = isTarget,
+                                    onClick = { onLightThemeSelected(lightT.id) },
+                                    label = {
+                                        Text(
+                                            text = lightT.name,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isTarget) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
+                                    leadingIcon = if (isTarget) {
+                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                                    } else null
+                                )
+                            }
+                        }
+                    }
+
+                    // Dark theme target
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "🌙 Preferred Dark Theme (Night / Dark Mode)",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF334155)
+                        )
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(KeyboardThemes.DARK_THEMES) { darkT ->
+                                val isTarget = darkT.id == currentSettings.darkThemeId
+                                FilterChip(
+                                    selected = isTarget,
+                                    onClick = { onDarkThemeSelected(darkT.id) },
+                                    label = {
+                                        Text(
+                                            text = darkT.name,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isTarget) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
+                                    leadingIcon = if (isTarget) {
+                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                                    } else null
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Real-Time Keyboard Preview under Selected Theme
         FlatCard {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    text = "Live Theme Preview",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF0F172A)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Live Theme Preview",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0F172A)
+                    )
+                    Text(
+                        text = activeTheme.name,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF2563EB)
+                    )
+                }
 
                 SingBordKeyboardView(
-                    settings = currentSettings.copy(themeId = currentThemeId),
+                    settings = currentSettings.copy(
+                        themeId = activeTheme.id,
+                        followSystemTheme = false
+                    ),
                     listener = null
                 )
             }
@@ -844,7 +1039,7 @@ fun KeyboardThemesTab(
 
         // Section Title
         Text(
-            text = "Select Theme Template (${KeyboardThemes.ALL_THEMES.size} Available)",
+            text = "All Theme Templates (${KeyboardThemes.ALL_THEMES.size})",
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF0F172A)
@@ -852,11 +1047,26 @@ fun KeyboardThemesTab(
 
         // List of all theme cards
         KeyboardThemes.ALL_THEMES.forEach { theme ->
-            val isSelected = theme.id == currentThemeId
+            val isSelected = if (currentSettings.followSystemTheme) {
+                if (theme.isDark) theme.id == currentSettings.darkThemeId else theme.id == currentSettings.lightThemeId
+            } else {
+                theme.id == currentThemeId
+            }
             ThemeTemplateCard(
                 theme = theme,
                 isSelected = isSelected,
-                onSelect = { onThemeSelected(theme.id) }
+                isAutoMode = currentSettings.followSystemTheme,
+                onSelect = {
+                    if (currentSettings.followSystemTheme) {
+                        if (theme.isDark) {
+                            onDarkThemeSelected(theme.id)
+                        } else {
+                            onLightThemeSelected(theme.id)
+                        }
+                    } else {
+                        onThemeSelected(theme.id)
+                    }
+                }
             )
         }
 
@@ -868,6 +1078,7 @@ fun KeyboardThemesTab(
 fun ThemeTemplateCard(
     theme: KeyboardThemePalette,
     isSelected: Boolean,
+    isAutoMode: Boolean = false,
     onSelect: () -> Unit
 ) {
     FlatCard {
@@ -923,19 +1134,17 @@ fun ThemeTemplateCard(
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF0F172A)
                             )
-                            if (theme.isDark) {
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = Color(0xFF1E293B)
-                                ) {
-                                    Text(
-                                        text = "DARK",
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                    )
-                                }
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = if (theme.isDark) Color(0xFF1E293B) else Color(0xFFFEF3C7)
+                            ) {
+                                Text(
+                                    text = if (theme.isDark) "🌙 DARK" else "☀️ LIGHT",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (theme.isDark) Color.White else Color(0xFF92400E),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
                             }
                         }
                         Text(
@@ -956,8 +1165,12 @@ fun ThemeTemplateCard(
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Text(
-                        text = if (isSelected) "Applied ✓" else "Apply",
-                        fontSize = 12.sp,
+                        text = if (isSelected) {
+                            if (isAutoMode) "Selected Target ✓" else "Applied ✓"
+                        } else {
+                            if (isAutoMode) "Set as ${if (theme.isDark) "Dark" else "Light"}" else "Apply"
+                        },
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -1008,6 +1221,7 @@ fun ColorDot(label: String, color: Color) {
 fun KeyboardSettingsTab(
     currentSettings: KeyboardSettings,
     prefs: SingBordPreferences,
+    onFollowSystemThemeChange: (Boolean) -> Unit,
     onBanglishChange: (Boolean) -> Unit,
     onWordLearningChange: (Boolean) -> Unit,
     onGesturesChange: (Boolean) -> Unit,
@@ -1329,6 +1543,16 @@ fun KeyboardSettingsTab(
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF0F172A)
                 )
+
+                // Auto System Dark/Light Theme Switching
+                ToggleOptionRow(
+                    title = "Auto-Switch Theme with System",
+                    description = "Follow Android system global Dark and Light mode automatically",
+                    checked = currentSettings.followSystemTheme,
+                    onCheckedChange = onFollowSystemThemeChange
+                )
+
+                HorizontalDivider(color = Color(0xFFE2E8F0))
 
                 // Number Row
                 ToggleOptionRow(
