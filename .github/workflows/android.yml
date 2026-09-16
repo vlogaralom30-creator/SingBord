@@ -17,18 +17,34 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-      - name: Accept Android SDK Licenses
+      - name: Configure Android SDK & Accept Licenses
         run: |
-          yes | sdkmanager --licenses || true
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="${ANDROID_HOME}"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+
+          mkdir -p "$ANDROID_HOME/licenses"
+          printf "\n89377a67450b32e948b78e3163b12a1278a4fa0d\n459f2183d265d9497ab24323721e45f162da698b\n33b6a2b649121a1d7cecc61c818f6d5b631597d5\n24333f8a63b6825ea9c5514f83c2829b004d1fee\nd56f5187479451eabf01fb78af6dfcb131a6481e\n84831b9409646a918e30573bab4c9c91346d8abd\n" > "$ANDROID_HOME/licenses/android-sdk-license"
+          printf "\n84831b9409646a918e30573bab4c9c91346d8abd\n" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+          printf "\nd975f751698a77b662f1254ddbeed3901e976f5a\n" > "$ANDROID_HOME/licenses/intel-android-extra-license"
+          printf "\ne9acab5b5fbb560a72cfa4f4694b9086ccc26bb7\n" > "$ANDROID_HOME/licenses/mips-android-sysimage-license"
+          printf "\n601085b94cd77f0b54ff86406957099e50770d38\n" > "$ANDROID_HOME/licenses/google-gdk-license"
+
+          if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0" || true
+          fi
 
       - name: Copy Environment Configuration
         run: |
@@ -41,23 +57,26 @@ jobs:
         run: |
           if [ -f debug.keystore.base64 ] && [ -s debug.keystore.base64 ]; then
             echo "Restoring debug.keystore from base64..."
-            tr -d '\r\n ' < debug.keystore.base64 | base64 -d > debug.keystore
+            tr -d '\r\n ' < debug.keystore.base64 | base64 -d > debug.keystore || true
           fi
           if [ ! -f debug.keystore ] || [ ! -s debug.keystore ]; then
             echo "Generating fallback debug.keystore..."
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
+          mkdir -p ~/.android
+          cp debug.keystore ~/.android/debug.keystore || true
+          cp debug.keystore app/debug.keystore || true
           ls -la debug.keystore
 
       - name: Grant Execute Permission to Gradlew
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace --no-daemon --no-configuration-cache
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SingBord-Debug-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
