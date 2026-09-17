@@ -27,8 +27,9 @@ interface UserWordDao {
     @Transaction
     suspend fun recordWordUsage(rawWord: String) {
         val clean = rawWord.trim().lowercase()
-        // Do not store single characters or strings with numbers/symbols
-        if (clean.length < 2 || !clean.all { it.isLetter() }) return
+        // Allow valid Latin letters, apostrophes, and any Bengali Unicode character (consonants, vowel marks, virama)
+        val isValid = clean.length >= 2 && clean.all { it.isLetter() || it in '\u0980'..'\u09FF' || it == '\'' }
+        if (!isValid) return
 
         val existing = getWord(clean)
         if (existing != null) {

@@ -16,13 +16,17 @@ class UserDictionaryRepository private constructor(context: Context) {
 
     private val db = SingBordDatabase.getInstance(context)
     private val dao = db.userWordDao()
+    private val bigramDao = db.userWordBigramDao()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // Ultra-fast in-memory frequency cache for zero-latency suggestions on UI thread
     private val memoryFrequencyCache = ConcurrentHashMap<String, Int>()
 
+    // In-memory bigram transitions cache: prevWord -> (nextWord -> frequency)
+    private val memoryBigramCache = ConcurrentHashMap<String, ConcurrentHashMap<String, Int>>()
+
     init {
-        // Preload learned words into memory cache
+        // Preload learned words and bigrams into memory cache
         scope.launch {
             try {
                 val words = dao.getTopWords()
@@ -32,7 +36,21 @@ class UserDictionaryRepository private constructor(context: Context) {
             } catch (e: Exception) {
                 // Fallback gracefully
             }
+
+            try {
+                val bigrams = bigramDao.getTopBigrams()
+                bigrams.forEach {
+                    val map = memoryBigramCache.getOrPut(it.prevWord.lowercase()) { ConcurrentHashMap() }
+                    map[it.nextWord.lowercase()] = it.frequency
+                }
+            } catch (e: Exception) {
+                // Fallback gracefully
+            }
         }
+    }
+
+    private fun isValidWord(clean: String): Boolean {
+        return clean.length >= 2 && clean.all { it.isLetter() || it in '\u0980'..'\u09FF' || it == '\'' }
     }
 
     /**
@@ -40,7 +58,7 @@ class UserDictionaryRepository private constructor(context: Context) {
      */
     fun recordWord(rawWord: String) {
         val clean = rawWord.trim().lowercase()
-        if (clean.length < 2 || !clean.all { it.isLetter() }) return
+        if (!isValidWord(clean)) return
 
         // Update in-memory frequency immediately for instant ranking in next keystrokes
         val currentCount = memoryFrequencyCache[clean] ?: 0
@@ -57,11 +75,46 @@ class UserDictionaryRepository private constructor(context: Context) {
     }
 
     /**
+     * Records bigram sequence (prevWord -> nextWord) for context-aware next-word prediction.
+     */
+    fun recordBigram(prev: String, next: String) {
+        val cleanPrev = prev.trim().lowercase()
+        val cleanNext = next.trim().lowercase()
+        if (!isValidWord(cleanPrev) || !isValidWord(cleanNext) || cleanPrev == cleanNext) return
+
+        // Instant update in memory
+        val nextMap = memoryBigramCache.getOrPut(cleanPrev) { ConcurrentHashMap() }
+        val count = nextMap[cleanNext] ?: 0
+        nextMap[cleanNext] = count + 1
+
+        // Background persistence
+        scope.launch {
+            try {
+                bigramDao.recordTransition(cleanPrev, cleanNext)
+            } catch (e: Exception) {
+                // Fail-safe
+            }
+        }
+    }
+
+    /**
+     * Retrieves predictions for the next word following prevWord, ranked by frequency.
+     */
+    fun getPredictedNextWords(prevWord: String, limit: Int = 5): List<String> {
+        val cleanPrev = prevWord.trim().lowercase()
+        val nextMap = memoryBigramCache[cleanPrev] ?: return emptyList()
+        return nextMap.entries
+            .sortedByDescending { it.value }
+            .take(limit)
+            .map { it.key }
+    }
+
+    /**
      * Manually adds or updates a custom word with specific frequency.
      */
     fun addCustomWord(rawWord: String, frequency: Int = 5) {
         val clean = rawWord.trim().lowercase()
-        if (clean.length < 2 || !clean.all { it.isLetter() }) return
+        if (!isValidWord(clean)) return
 
         memoryFrequencyCache[clean] = frequency
         scope.launch {
@@ -79,9 +132,11 @@ class UserDictionaryRepository private constructor(context: Context) {
     fun deleteWord(rawWord: String) {
         val clean = rawWord.trim().lowercase()
         memoryFrequencyCache.remove(clean)
+        memoryBigramCache.remove(clean)
         scope.launch {
             try {
                 dao.deleteWord(clean)
+                bigramDao.deleteBigramsFor(clean)
             } catch (e: Exception) {
                 // Fail-safe
             }
@@ -93,9 +148,11 @@ class UserDictionaryRepository private constructor(context: Context) {
      */
     fun clearAll() {
         memoryFrequencyCache.clear()
+        memoryBigramCache.clear()
         scope.launch {
             try {
                 dao.clearAll()
+                bigramDao.clearAll()
             } catch (e: Exception) {
                 // Fail-safe
             }
