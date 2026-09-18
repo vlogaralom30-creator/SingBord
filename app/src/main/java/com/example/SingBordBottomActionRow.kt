@@ -52,7 +52,7 @@ fun SingBordBottomActionRow(
     ) {
         // Mode Toggle Key (?123 / ABC / =<)
         val modeLabel = when (keyboardMode) {
-            KeyboardMode.ALPHA -> "?123"
+            KeyboardMode.ALPHA -> if (theme.isKawaiiDessert) "🍨 ?123" else "?123"
             KeyboardMode.NUMERIC_SYMBOLS -> "ABC"
             KeyboardMode.ALT_SYMBOLS -> "ABC"
             KeyboardMode.EMOJI -> "ABC"

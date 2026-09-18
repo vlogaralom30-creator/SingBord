@@ -226,6 +226,23 @@ fun SingBordMainKeyRows(
                 val row2Keys = listOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
                 val row3Keys = listOf("z", "x", "c", "v", "b", "n", "m")
 
+                val rainbowSpectrum = listOf(
+                    Color(0xFF84CC16), // Lime Green
+                    Color(0xFF22C55E), // Green
+                    Color(0xFF06B6D4), // Cyan
+                    Color(0xFF0EA5E9), // Sky Blue
+                    Color(0xFF3B82F6), // Blue
+                    Color(0xFF6366F1), // Indigo
+                    Color(0xFF8B5CF6), // Purple
+                    Color(0xFFA855F7), // Violet
+                    Color(0xFFD946EF), // Magenta
+                    Color(0xFFF43F5E)  // Pink / Rose
+                )
+
+                val kawaiiRow1Hints = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+                val kawaiiRow2Hints = listOf("@", "#", "$", "%", "&", "*", "-", "+", "=")
+                val kawaiiRow3Hints = listOf("!", "?", "\"", "'", "/", ":", ";")
+
                 // Row 1 (10 Keys)
                 Row(
                     modifier = Modifier
@@ -250,10 +267,17 @@ fun SingBordMainKeyRows(
                         } else {
                             keyText
                         }
+                        val resolvedTextColor = if (theme.isRainbowSpectrum) {
+                            rainbowSpectrum[index % rainbowSpectrum.size]
+                        } else textColor
+
+                        val subHint = if (theme.isKawaiiDessert) kawaiiRow1Hints.getOrNull(index) else null
+
                         FlatKeyButton(
                             text = displayText,
+                            subText = subHint,
                             backgroundColor = letterKeyBg,
-                            textColor = textColor,
+                            textColor = resolvedTextColor,
                             modifier = Modifier.weight(1f),
                             onClick = { onKeyPress(keyText, false) }
                         )
@@ -296,10 +320,17 @@ fun SingBordMainKeyRows(
                         } else {
                             keyText
                         }
+                        val resolvedTextColor = if (theme.isRainbowSpectrum) {
+                            rainbowSpectrum[(index + 1) % rainbowSpectrum.size]
+                        } else textColor
+
+                        val subHint = if (theme.isKawaiiDessert) kawaiiRow2Hints.getOrNull(index) else null
+
                         FlatKeyButton(
                             text = displayText,
+                            subText = subHint,
                             backgroundColor = letterKeyBg,
-                            textColor = textColor,
+                            textColor = resolvedTextColor,
                             modifier = Modifier.weight(1f),
                             onClick = { onKeyPress(keyText, false) }
                         )
@@ -325,16 +356,29 @@ fun SingBordMainKeyRows(
                         .height(keyHeight)
                 ) {
                     // Shift Key
-                    IconKeyButton(
-                        icon = Icons.Default.ArrowUpward,
-                        contentDescription = "Shift",
-                        backgroundColor = if (shiftState != ShiftState.OFF) accentColor else functionKeyBg,
-                        iconColor = if (shiftState != ShiftState.OFF) accentTextColor else functionTextColor,
-                        badgeColor = theme.shiftBadgeColor,
-                        isFunctionKey = true,
-                        modifier = Modifier.weight(1.5f),
-                        onClick = onToggleShift
-                    )
+                    if (theme.isKawaiiDessert) {
+                        FlatKeyButton(
+                            text = "🍓",
+                            backgroundColor = if (shiftState != ShiftState.OFF) accentColor else functionKeyBg,
+                            textColor = if (shiftState != ShiftState.OFF) accentTextColor else functionTextColor,
+                            badgeColor = theme.shiftBadgeColor,
+                            isFunctionKey = true,
+                            fontSize = 18.sp,
+                            modifier = Modifier.weight(1.5f),
+                            onClick = onToggleShift
+                        )
+                    } else {
+                        IconKeyButton(
+                            icon = Icons.Default.ArrowUpward,
+                            contentDescription = "Shift",
+                            backgroundColor = if (shiftState != ShiftState.OFF) accentColor else functionKeyBg,
+                            iconColor = if (shiftState != ShiftState.OFF) accentTextColor else functionTextColor,
+                            badgeColor = theme.shiftBadgeColor,
+                            isFunctionKey = true,
+                            modifier = Modifier.weight(1.5f),
+                            onClick = onToggleShift
+                        )
+                    }
 
                     if (isFlatGrid) {
                         Spacer(
@@ -346,7 +390,7 @@ fun SingBordMainKeyRows(
                     }
 
                     // 7 Middle Keys
-                    row3Keys.forEach { letter ->
+                    row3Keys.forEachIndexed { index, letter ->
                         val keyText = when (shiftState) {
                             ShiftState.ON, ShiftState.CAPS_LOCK -> letter.uppercase()
                             ShiftState.OFF -> letter.lowercase()
@@ -356,10 +400,17 @@ fun SingBordMainKeyRows(
                         } else {
                             keyText
                         }
+                        val resolvedTextColor = if (theme.isRainbowSpectrum) {
+                            rainbowSpectrum[(index + 2) % rainbowSpectrum.size]
+                        } else textColor
+
+                        val subHint = if (theme.isKawaiiDessert) kawaiiRow3Hints.getOrNull(index) else null
+
                         FlatKeyButton(
                             text = displayText,
+                            subText = subHint,
                             backgroundColor = letterKeyBg,
-                            textColor = textColor,
+                            textColor = resolvedTextColor,
                             modifier = Modifier.weight(1f),
                             onClick = { onKeyPress(keyText, false) }
                         )
@@ -374,13 +425,26 @@ fun SingBordMainKeyRows(
                     }
 
                     // Backspace Key
-                    RepeatingBackspaceKey(
-                        backgroundColor = functionKeyBg,
-                        iconColor = functionTextColor,
-                        badgeColor = theme.backspaceBadgeColor,
-                        modifier = Modifier.weight(1.5f),
-                        onDelete = onDelete
-                    )
+                    if (theme.isKawaiiDessert) {
+                        FlatKeyButton(
+                            text = "🥤",
+                            backgroundColor = functionKeyBg,
+                            textColor = functionTextColor,
+                            badgeColor = theme.backspaceBadgeColor,
+                            isFunctionKey = true,
+                            fontSize = 18.sp,
+                            modifier = Modifier.weight(1.5f),
+                            onClick = onDelete
+                        )
+                    } else {
+                        RepeatingBackspaceKey(
+                            backgroundColor = functionKeyBg,
+                            iconColor = functionTextColor,
+                            badgeColor = theme.backspaceBadgeColor,
+                            modifier = Modifier.weight(1.5f),
+                            onDelete = onDelete
+                        )
+                    }
                 }
             }
         } else {

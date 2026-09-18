@@ -1,8 +1,10 @@
 package com.example
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -22,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.UserDictionaryRepository
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SingBordTopToolbar(
     theme: KeyboardThemePalette,
@@ -38,6 +41,10 @@ fun SingBordTopToolbar(
     lastCommittedWord: String,
     activeFontStyle: StylishFontStyle,
     userRepo: UserDictionaryRepository,
+    voiceState: SingBordVoiceInputManager.VoiceState,
+    voiceRmsLevel: Float,
+    voiceLiveText: String,
+    voiceLanguageCode: String,
     listener: KeyboardActionListener?,
     onToggleTools: () -> Unit,
     onSelectEmojiMode: () -> Unit,
@@ -45,9 +52,33 @@ fun SingBordTopToolbar(
     onSwitchToTools: () -> Unit,
     onSelectCandidate: (String) -> Unit,
     onOpenVoiceInput: () -> Unit,
+    onOpenVoiceSubPanel: () -> Unit,
+    onToggleVoiceMic: () -> Unit,
+    onSwitchVoiceLanguage: () -> Unit,
+    onCloseVoiceInline: () -> Unit,
     triggerFeedback: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    if (toolbarMode == ToolbarMode.VOICE_INLINE) {
+        SingBordInlineVoiceBar(
+            theme = theme,
+            isFlatGrid = isFlatGrid,
+            lineThicknessDp = lineThicknessDp,
+            gridBorderColor = gridBorderColor,
+            voiceState = voiceState,
+            rmsLevel = voiceRmsLevel,
+            liveText = voiceLiveText,
+            currentVoiceLang = voiceLanguageCode,
+            onToggleMic = onToggleVoiceMic,
+            onSwitchLanguage = onSwitchVoiceLanguage,
+            onExpandFullPad = onOpenVoiceSubPanel,
+            onClose = onCloseVoiceInline,
+            triggerFeedback = triggerFeedback,
+            modifier = modifier
+        )
+        return
+    }
+
     // Ridmik-Style Dual-Mode Top Toolbar
     Row(
         modifier = modifier
@@ -200,7 +231,7 @@ fun SingBordTopToolbar(
                     icon = Icons.Default.Mic,
                     contentDescription = "Voice Input",
                     theme = theme,
-                    isActive = activeSubPanel == KeyboardSubPanel.VOICE_INPUT,
+                    isActive = toolbarMode == ToolbarMode.VOICE_INLINE || activeSubPanel == KeyboardSubPanel.VOICE_INPUT,
                     onClick = {
                         triggerFeedback()
                         onOpenVoiceInput()
@@ -289,21 +320,21 @@ fun SingBordTopToolbar(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxHeight(if (isFlatGrid) 1f else 0.88f)
-                                .clip(candShape)
-                                .background(
-                                    if (isHighlighted) theme.accentColor.copy(alpha = if (theme.isDark) 0.28f else 0.18f)
-                                    else if (isFlatGrid) theme.candidateBg
-                                    else theme.keyBg.copy(alpha = 0.85f)
-                                )
-                                .then(
-                                    if (isHighlighted && !isFlatGrid) Modifier.border(1.dp, theme.accentColor.copy(alpha = 0.65f), candShape)
-                                    else if (!isFlatGrid && theme.keyBorderWidthDp > 0f) Modifier.border(0.6.dp, theme.keyBorderColor.copy(alpha = 0.4f), candShape)
-                                    else Modifier
-                                )
-                                .clickable {
-                                    triggerFeedback()
-                                    onSelectCandidate(candidate)
-                                },
+                            .clip(candShape)
+                            .background(
+                                if (isHighlighted) theme.accentColor.copy(alpha = if (theme.isDark) 0.28f else 0.18f)
+                                else if (isFlatGrid) theme.candidateBg
+                                else theme.keyBg.copy(alpha = 0.85f)
+                            )
+                            .then(
+                                if (isHighlighted && !isFlatGrid) Modifier.border(1.dp, theme.accentColor.copy(alpha = 0.65f), candShape)
+                                else if (!isFlatGrid && theme.keyBorderWidthDp > 0f) Modifier.border(0.6.dp, theme.keyBorderColor.copy(alpha = 0.4f), candShape)
+                                else Modifier
+                            )
+                            .clickable {
+                                triggerFeedback()
+                                onSelectCandidate(candidate)
+                            },
                             contentAlignment = Alignment.Center
                         ) {
                             val displayCandidate = if (settings.enableStylishFonts && activeFontStyle != StylishFontStyle.NORMAL) {
@@ -354,15 +385,21 @@ fun SingBordTopToolbar(
                                 Modifier.background(theme.functionKeyBg)
                             }
                         )
-                        .clickable {
-                            triggerFeedback()
-                            onOpenVoiceInput()
-                        },
+                        .combinedClickable(
+                            onClick = {
+                                triggerFeedback()
+                                onOpenVoiceInput()
+                            },
+                            onLongClick = {
+                                triggerFeedback()
+                                onOpenVoiceSubPanel()
+                            }
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Mic,
-                        contentDescription = "Voice Input ($resolvedVoiceLang)",
+                        contentDescription = "Voice Input ($resolvedVoiceLang) - Tap for inline, Long-press for studio",
                         tint = theme.functionTextColor,
                         modifier = Modifier.size(17.dp)
                     )
@@ -371,3 +408,4 @@ fun SingBordTopToolbar(
         }
     }
 }
+

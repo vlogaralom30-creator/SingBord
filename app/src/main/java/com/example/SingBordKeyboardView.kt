@@ -113,7 +113,8 @@ enum class KeyboardMode {
 
 enum class ToolbarMode {
     SUGGESTIONS,
-    TOOLS
+    TOOLS,
+    VOICE_INLINE
 }
 
 enum class KeyboardSubPanel {
@@ -174,6 +175,64 @@ fun SingBordKeyboardView(
     var selectedEmojiCategory by remember { mutableStateOf(EmojiCategory.SMILEYS) }
     var recentEmojis by remember { mutableStateOf(prefs.getRecentEmojis()) }
     val coroutineScope = rememberCoroutineScope()
+
+    // Dedicated Voice Recognition State for Inline Voice Mode
+    var voiceState by remember { mutableStateOf<SingBordVoiceInputManager.VoiceState>(SingBordVoiceInputManager.VoiceState.Idle) }
+    var voiceLiveText by remember { mutableStateOf("") }
+    var voiceRmsLevel by remember { mutableStateOf(0f) }
+    var voiceLanguageCode by remember(currentLanguage, settings.voiceLanguage) {
+        val initialLang = if (settings.voiceLanguage == "auto") {
+            if (currentLanguage == KeyboardLanguage.ENGLISH) "en-US" else "bn-BD"
+        } else {
+            settings.voiceLanguage
+        }
+        mutableStateOf(initialLang)
+    }
+
+    val voiceManager = remember {
+        SingBordVoiceInputManager(
+            context = context,
+            onPartialResult = { partial ->
+                voiceLiveText = partial
+            },
+            onFinalResult = { final ->
+                voiceLiveText = final
+                if (final.isNotBlank()) {
+                    listener?.onTextEntered(final + " ")
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    coroutineScope.launch {
+                        delay(1200)
+                        if (voiceLiveText == final) {
+                            voiceLiveText = ""
+                        }
+                    }
+                }
+            },
+            onStateChanged = { state ->
+                voiceState = state
+            },
+            onRmsLevelChanged = { level ->
+                voiceRmsLevel = level
+            }
+        )
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            voiceManager.cancel()
+        }
+    }
+
+    // Auto-sync voice recognition language whenever user switches keyboard language
+    LaunchedEffect(currentLanguage) {
+        if (settings.voiceLanguage == "auto") {
+            val newLang = if (currentLanguage == KeyboardLanguage.ENGLISH) "en-US" else "bn-BD"
+            voiceLanguageCode = newLang
+            if (toolbarMode == ToolbarMode.VOICE_INLINE) {
+                voiceManager.startListening(newLang, continuous = true)
+            }
+        }
+    }
 
     fun cycleLanguage() {
         currentLanguage = when (currentLanguage) {
@@ -337,6 +396,61 @@ fun SingBordKeyboardView(
                     else Modifier
                 )
         ) {
+            // Realistic Water Droplets & Condensation Canvas (Photos 3 & 4)
+            if (theme.hasWaterDrops) {
+                androidx.compose.foundation.Canvas(modifier = Modifier.matchParentSize()) {
+                    val dropSeeds = listOf(
+                        Triple(0.06f, 0.12f, 7f),
+                        Triple(0.18f, 0.38f, 13f),
+                        Triple(0.12f, 0.74f, 10f),
+                        Triple(0.28f, 0.20f, 6f),
+                        Triple(0.35f, 0.82f, 15f),
+                        Triple(0.48f, 0.10f, 9f),
+                        Triple(0.55f, 0.62f, 16f),
+                        Triple(0.68f, 0.32f, 11f),
+                        Triple(0.78f, 0.78f, 8f),
+                        Triple(0.85f, 0.16f, 14f),
+                        Triple(0.92f, 0.52f, 10f),
+                        Triple(0.05f, 0.88f, 6f),
+                        Triple(0.42f, 0.46f, 12f),
+                        Triple(0.62f, 0.90f, 9f),
+                        Triple(0.72f, 0.08f, 13f),
+                        Triple(0.88f, 0.72f, 7f),
+                        Triple(0.22f, 0.58f, 8f),
+                        Triple(0.96f, 0.30f, 11f)
+                    )
+                    dropSeeds.forEach { (nx, ny, r) ->
+                        val cx = size.width * nx
+                        val cy = size.height * ny
+                        val radius = r.dp.toPx()
+                        // Soft Shadow
+                        drawCircle(
+                            color = Color.Black.copy(alpha = 0.28f),
+                            radius = radius,
+                            center = Offset(cx + 1.5f, cy + 2f)
+                        )
+                        // Water Drop Refraction
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.24f),
+                            radius = radius,
+                            center = Offset(cx, cy)
+                        )
+                        // Specular Light Highlight
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.85f),
+                            radius = radius * 0.35f,
+                            center = Offset(cx - radius * 0.35f, cy - radius * 0.35f)
+                        )
+                        // Softer Bottom Glow
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.40f),
+                            radius = radius * 0.22f,
+                            center = Offset(cx + radius * 0.25f, cy + radius * 0.35f)
+                        )
+                    }
+                }
+            }
+
             Column(
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -357,8 +471,15 @@ fun SingBordKeyboardView(
                 lastCommittedWord = lastCommittedWord,
                 activeFontStyle = activeFontStyle,
                 userRepo = userRepo,
+                voiceState = voiceState,
+                voiceRmsLevel = voiceRmsLevel,
+                voiceLiveText = voiceLiveText,
+                voiceLanguageCode = voiceLanguageCode,
                 listener = listener,
                 onToggleTools = {
+                    if (toolbarMode == ToolbarMode.VOICE_INLINE) {
+                        voiceManager.cancel()
+                    }
                     if (activeSubPanel != KeyboardSubPanel.NONE) {
                         activeSubPanel = KeyboardSubPanel.NONE
                         toolbarMode = ToolbarMode.SUGGESTIONS
@@ -367,15 +488,25 @@ fun SingBordKeyboardView(
                     }
                 },
                 onSelectEmojiMode = {
+                    if (toolbarMode == ToolbarMode.VOICE_INLINE) {
+                        voiceManager.cancel()
+                    }
                     activeSubPanel = KeyboardSubPanel.NONE
                     keyboardMode = KeyboardMode.EMOJI
                     toolbarMode = ToolbarMode.SUGGESTIONS
                 },
                 onOpenSubPanel = { panel ->
+                    if (toolbarMode == ToolbarMode.VOICE_INLINE) {
+                        voiceManager.cancel()
+                        toolbarMode = ToolbarMode.SUGGESTIONS
+                    }
                     keyboardMode = KeyboardMode.ALPHA
                     activeSubPanel = if (activeSubPanel == panel) KeyboardSubPanel.NONE else panel
                 },
                 onSwitchToTools = {
+                    if (toolbarMode == ToolbarMode.VOICE_INLINE) {
+                        voiceManager.cancel()
+                    }
                     toolbarMode = ToolbarMode.TOOLS
                 },
                 onSelectCandidate = { candidate ->
@@ -394,8 +525,42 @@ fun SingBordKeyboardView(
                     currentComposingWord = ""
                 },
                 onOpenVoiceInput = {
+                    // Inline voice mode: keeps keyboard completely visible underneath!
+                    activeSubPanel = KeyboardSubPanel.NONE
+                    keyboardMode = KeyboardMode.ALPHA
+                    toolbarMode = ToolbarMode.VOICE_INLINE
+                    voiceLiveText = ""
+                    val lang = if (settings.voiceLanguage == "auto") {
+                        if (currentLanguage == KeyboardLanguage.ENGLISH) "en-US" else "bn-BD"
+                    } else {
+                        settings.voiceLanguage
+                    }
+                    voiceLanguageCode = lang
+                    voiceManager.startListening(lang, continuous = true)
+                },
+                onOpenVoiceSubPanel = {
+                    voiceManager.cancel()
+                    toolbarMode = ToolbarMode.SUGGESTIONS
                     keyboardMode = KeyboardMode.ALPHA
                     activeSubPanel = KeyboardSubPanel.VOICE_INPUT
+                },
+                onToggleVoiceMic = {
+                    if (voiceManager.isListening) {
+                        voiceManager.stopListening()
+                    } else {
+                        voiceManager.startListening(voiceLanguageCode, continuous = true)
+                    }
+                },
+                onSwitchVoiceLanguage = {
+                    val nextLang = if (voiceLanguageCode.startsWith("bn")) "en-US" else "bn-BD"
+                    voiceLanguageCode = nextLang
+                    voiceLiveText = ""
+                    voiceManager.startListening(nextLang, continuous = true)
+                },
+                onCloseVoiceInline = {
+                    voiceManager.cancel()
+                    voiceLiveText = ""
+                    toolbarMode = ToolbarMode.SUGGESTIONS
                 },
                 triggerFeedback = { triggerFeedback() }
             )
@@ -438,9 +603,8 @@ fun SingBordKeyboardView(
                     }
                     KeyboardSubPanel.CLIPBOARD -> {
                         ClipboardSubPanel(
-                            context = context,
-                            prefs = prefs,
                             theme = theme,
+                            prefs = prefs,
                             lineThicknessDp = lineThicknessDp,
                             gridBorderColor = gridBorderColor,
                             totalHeight = totalSubPanelHeight,
@@ -712,18 +876,29 @@ fun KeyCapsule(
             val topColor = if (isFunctionKey) (theme.functionKeyGradientTop ?: baseColor) else (theme.keyGradientTop ?: baseColor)
             val btmColor = if (isFunctionKey) (theme.functionKeyGradientBottom ?: baseColor) else (theme.keyGradientBottom ?: baseColor)
             Brush.verticalGradient(listOf(topColor, btmColor))
+        } else if (theme.keyGradientTop != null && theme.keyGradientBottom != null) {
+            val topColor = if (isFunctionKey) (theme.functionKeyGradientTop ?: theme.keyGradientTop!!) else theme.keyGradientTop!!
+            val btmColor = if (isFunctionKey) (theme.functionKeyGradientBottom ?: theme.keyGradientBottom!!) else theme.keyGradientBottom!!
+            Brush.verticalGradient(listOf(topColor, btmColor))
         } else null
 
-        val borderStroke = if (isGlass && theme.keyBorderWidthDp > 0f) {
-            BorderStroke(
-                width = theme.keyBorderWidthDp.dp,
-                brush = Brush.verticalGradient(
-                    listOf(
-                        theme.keyBorderColor,
-                        theme.keyBorderColor.copy(alpha = (theme.keyBorderColor.alpha * 0.25f).coerceAtLeast(0.04f))
+        val borderStroke = if (theme.keyBorderWidthDp > 0f) {
+            if (isGlass) {
+                BorderStroke(
+                    width = theme.keyBorderWidthDp.dp,
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            theme.keyBorderColor,
+                            theme.keyBorderColor.copy(alpha = (theme.keyBorderColor.alpha * 0.35f).coerceAtLeast(0.08f))
+                        )
                     )
                 )
-            )
+            } else {
+                BorderStroke(
+                    width = theme.keyBorderWidthDp.dp,
+                    color = theme.keyBorderColor
+                )
+            }
         } else null
 
         Box(
@@ -731,7 +906,7 @@ fun KeyCapsule(
                 .fillMaxHeight()
                 .padding(horizontal = hGap, vertical = vGap)
         ) {
-            // 3D Bottom Lip Depth Shadow
+            // Neon Glow / 3D Bottom Lip Depth Shadow
             if (theme.keyElevationDp > 0f) {
                 val shadowOffsetY = if (isPressed) (theme.keyElevationDp * 0.35f).dp else theme.keyElevationDp.dp
                 Box(
@@ -760,6 +935,27 @@ fun KeyCapsule(
                     .then(if (borderStroke != null) Modifier.border(borderStroke, shape) else Modifier),
                 contentAlignment = Alignment.Center
             ) {
+                // 3D Glass / Ice Cube Top Highlight Reflection (Photos 3 & 4)
+                if (theme.hasWaterDrops || isGlass) {
+                    val topHighlightRadius = (theme.keyCornerRadiusDp - 2f).coerceAtLeast(2f).dp
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight(0.46f)
+                            .align(Alignment.TopCenter)
+                            .padding(horizontal = 2.dp, vertical = 2.dp)
+                            .clip(RoundedCornerShape(topStart = topHighlightRadius, topEnd = topHighlightRadius))
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.White.copy(alpha = if (theme.hasWaterDrops) 0.50f else 0.28f),
+                                        Color.White.copy(alpha = 0.03f)
+                                    )
+                                )
+                            )
+                    )
+                }
+
                 if (badgeColor != null && badgeContent != null) {
                     Box(
                         modifier = Modifier
@@ -1176,17 +1372,28 @@ fun EnterKeyButton(
             )
         }
 
-        Icon(
-            imageVector = enterIcon,
-            contentDescription = enterDescription,
-            tint = accentTextColor,
-            modifier = Modifier
-                .size(20.dp)
-                .graphicsLayer(
+        if (theme.isKawaiiDessert) {
+            Text(
+                text = "🍰",
+                fontSize = 18.sp,
+                modifier = Modifier.graphicsLayer(
                     scaleX = scale,
                     scaleY = scale
                 )
-        )
+            )
+        } else {
+            Icon(
+                imageVector = enterIcon,
+                contentDescription = enterDescription,
+                tint = accentTextColor,
+                modifier = Modifier
+                    .size(20.dp)
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale
+                    )
+            )
+        }
     }
 }
 
@@ -1805,418 +2012,6 @@ fun TextEditorSubPanel(
                 onClick = {
                     triggerFeedback()
                     listener?.onDelete()
-                }
-            )
-        }
-    }
-}
-
-@Composable
-fun ClipboardSubPanel(
-    context: Context,
-    prefs: SingBordPreferences,
-    theme: KeyboardThemePalette,
-    lineThicknessDp: androidx.compose.ui.unit.Dp,
-    gridBorderColor: Color,
-    totalHeight: androidx.compose.ui.unit.Dp,
-    listener: KeyboardActionListener?,
-    onClose: () -> Unit,
-    triggerFeedback: () -> Unit
-) {
-    val supabase = remember { SupabaseBackendClient.getInstance(context) }
-    val scope = rememberCoroutineScope()
-    var selectedClipTab by remember { mutableStateOf(0) } // 0 = Local, 1 = Cloud
-
-    var history by remember {
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-        val primary = clipboard?.primaryClip?.let { clip ->
-            if (clip.itemCount > 0) clip.getItemAt(0)?.text?.toString() else null
-        }
-        if (!primary.isNullOrBlank()) {
-            prefs.addClipboardItem(primary)
-        }
-        mutableStateOf(prefs.getClipboardHistory())
-    }
-
-    var cloudClips by remember { mutableStateOf<List<CloudClipboardItem>>(emptyList()) }
-    var isCloudLoading by remember { mutableStateOf(false) }
-
-    LaunchedEffect(selectedClipTab) {
-        if (selectedClipTab == 1) {
-            isCloudLoading = true
-            val res = supabase.fetchCloudClipboard()
-            cloudClips = res.getOrDefault(emptyList())
-            isCloudLoading = false
-        }
-    }
-
-    val isFlatGrid = theme.keyShapeStyle == KeyboardKeyShapeStyle.FLAT_GRID
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(totalHeight)
-            .background(theme.keyboardBg)
-    ) {
-        // Top Toolbar inside Clipboard
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(36.dp)
-                .background(theme.functionKeyBg)
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Local vs Cloud Switcher
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(theme.keyBg.copy(alpha = 0.5f))
-                    .padding(2.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(if (selectedClipTab == 0) theme.candidateBg else Color.Transparent)
-                        .clickable {
-                            triggerFeedback()
-                            selectedClipTab = 0
-                        }
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                ) {
-                    Text(
-                        text = "Local (${history.size})",
-                        fontSize = 11.sp,
-                        fontWeight = if (selectedClipTab == 0) FontWeight.Bold else FontWeight.Normal,
-                        color = theme.keyTextColor
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(if (selectedClipTab == 1) theme.candidateBg else Color.Transparent)
-                        .clickable {
-                            triggerFeedback()
-                            selectedClipTab = 1
-                        }
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Cloud,
-                            contentDescription = null,
-                            tint = if (selectedClipTab == 1) Color(0xFF2563EB) else theme.functionTextColor,
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Text(
-                            text = "Cloud Copypad",
-                            fontSize = 11.sp,
-                            fontWeight = if (selectedClipTab == 1) FontWeight.Bold else FontWeight.Normal,
-                            color = if (selectedClipTab == 1) Color(0xFF2563EB) else theme.keyTextColor
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            if (selectedClipTab == 0 && history.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .clickable {
-                            triggerFeedback()
-                            prefs.clearClipboardHistory()
-                            history = emptyList()
-                        }
-                        .padding(horizontal = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Clear",
-                        tint = Color(0xFFEF4444),
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Text(
-                        text = "Clear",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFFEF4444)
-                    )
-                }
-            } else if (selectedClipTab == 1 && history.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .clickable {
-                            triggerFeedback()
-                            val topClip = history.firstOrNull()
-                            if (!topClip.isNullOrBlank()) {
-                                scope.launch {
-                                    supabase.addCloudClipboardItem(topClip)
-                                    val res = supabase.fetchCloudClipboard()
-                                    cloudClips = res.getOrDefault(emptyList())
-                                }
-                            }
-                        }
-                        .padding(horizontal = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CloudUpload,
-                        contentDescription = "Save to Cloud",
-                        tint = Color(0xFF2563EB),
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Text(
-                        text = "+Save Top",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF2563EB)
-                    )
-                }
-            }
-
-            if (isFlatGrid) {
-                Spacer(modifier = Modifier.width(lineThicknessDp).fillMaxHeight().background(gridBorderColor))
-            } else {
-                Spacer(modifier = Modifier.width(4.dp))
-            }
-
-            val closeShape = RoundedCornerShape(if (isFlatGrid) 0.dp else 8.dp)
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(closeShape)
-                    .background(if (isFlatGrid) Color.Transparent else theme.keyBg.copy(alpha = 0.5f))
-                    .clickable {
-                        triggerFeedback()
-                        onClose()
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Close,
-                    contentDescription = "Close",
-                    tint = theme.functionTextColor,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
-        }
-
-        if (isFlatGrid) {
-            Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
-        } else {
-            Spacer(modifier = Modifier.height(2.dp))
-        }
-
-        // Clips List
-        if (selectedClipTab == 0) {
-            // Local Clipboard
-            if (history.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .background(if (isFlatGrid) theme.keyBg else theme.keyboardBg),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Assignment,
-                            contentDescription = null,
-                            tint = theme.keyTextColor.copy(alpha = 0.35f),
-                            modifier = Modifier.size(32.dp)
-                        )
-                        Text(
-                            text = "Clipboard is empty",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = theme.keyTextColor
-                        )
-                        Text(
-                            text = "Copy text anywhere to paste it in 1 tap here",
-                            fontSize = 11.sp,
-                            color = theme.functionTextColor.copy(alpha = 0.8f)
-                        )
-                    }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .background(if (isFlatGrid) theme.keyBg else theme.keyboardBg),
-                    contentPadding = PaddingValues(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(history) { clipText ->
-                        val clipShape = RoundedCornerShape(if (isFlatGrid) 0.dp else 8.dp)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(clipShape)
-                                .background(theme.candidateBg)
-                                .then(
-                                    if (!isFlatGrid && theme.keyBorderWidthDp > 0f) Modifier.border(0.8.dp, theme.keyBorderColor.copy(alpha = 0.4f), clipShape)
-                                    else if (isFlatGrid) Modifier.border(1.dp, theme.gridBorderColor.copy(alpha = 0.5f), clipShape)
-                                    else Modifier
-                                )
-                                .clickable {
-                                    triggerFeedback()
-                                    listener?.onTextEntered(clipText)
-                                    prefs.addClipboardItem(clipText)
-                                    history = prefs.getClipboardHistory()
-                                }
-                                .padding(10.dp)
-                        ) {
-                            Text(
-                                text = clipText,
-                                fontSize = 13.sp,
-                                color = theme.keyTextColor,
-                                maxLines = 2
-                            )
-                        }
-                    }
-                }
-            }
-        } else {
-            // Cloud Copypad List
-            if (isCloudLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .background(if (isFlatGrid) theme.keyBg else theme.keyboardBg),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                }
-            } else if (cloudClips.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .background(if (isFlatGrid) theme.keyBg else theme.keyboardBg),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Cloud,
-                            contentDescription = null,
-                            tint = Color(0xFF2563EB).copy(alpha = 0.4f),
-                            modifier = Modifier.size(32.dp)
-                        )
-                        Text(
-                            text = "Cloud Copypad is empty",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = theme.keyTextColor
-                        )
-                        Text(
-                            text = "Save clips to Cloud to access permanently across devices",
-                            fontSize = 11.sp,
-                            color = theme.functionTextColor.copy(alpha = 0.8f)
-                        )
-                    }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .background(if (isFlatGrid) theme.keyBg else theme.keyboardBg),
-                    contentPadding = PaddingValues(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(cloudClips) { clipItem ->
-                        val clipShape = RoundedCornerShape(if (isFlatGrid) 0.dp else 8.dp)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(clipShape)
-                                .background(theme.candidateBg)
-                                .then(
-                                    if (!isFlatGrid && theme.keyBorderWidthDp > 0f) Modifier.border(0.8.dp, theme.keyBorderColor.copy(alpha = 0.4f), clipShape)
-                                    else if (isFlatGrid) Modifier.border(1.dp, theme.gridBorderColor.copy(alpha = 0.5f), clipShape)
-                                    else Modifier
-                                )
-                                .clickable {
-                                    triggerFeedback()
-                                    listener?.onTextEntered(clipItem.content)
-                                    prefs.addClipboardItem(clipItem.content)
-                                }
-                                .padding(10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = clipItem.content,
-                                    fontSize = 13.sp,
-                                    color = theme.keyTextColor,
-                                    maxLines = 2,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .background(Color(0xFFDBEAFE), RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 4.dp, vertical = 1.dp)
-                                ) {
-                                    Text(
-                                        text = "Cloud",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF2563EB)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if (isFlatGrid) {
-            Spacer(modifier = Modifier.fillMaxWidth().height(lineThicknessDp).background(gridBorderColor))
-        } else {
-            Spacer(modifier = Modifier.height(2.dp))
-        }
-
-        // Bottom Return Button
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(40.dp)
-        ) {
-            FlatKeyButton(
-                text = "Return to Keyboard",
-                fontSize = 13.sp,
-                backgroundColor = theme.accentColor,
-                textColor = theme.accentTextColor,
-                fontWeight = FontWeight.Bold,
-                isFunctionKey = true,
-                badgeColor = theme.enterBadgeColor,
-                modifier = Modifier.fillMaxSize(),
-                onClick = {
-                    triggerFeedback()
-                    onClose()
                 }
             )
         }

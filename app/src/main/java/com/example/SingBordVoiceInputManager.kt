@@ -3,6 +3,8 @@ package com.example
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -13,7 +15,7 @@ import android.util.Log
  *
  * Dedicated speech recognition controller for SingBord Input Method.
  * Uses Android SpeechRecognizer API directly inside the keyboard with live audio level
- * visualizer, partial recognition streaming, Bangla/English enhancement, and robust error handling.
+ * visualizer, partial recognition streaming, Bangla/English enhancement, and continuous typing.
  */
 class SingBordVoiceInputManager(
     private val context: Context,
@@ -34,11 +36,18 @@ class SingBordVoiceInputManager(
     var isListening: Boolean = false
         private set
 
+    var isContinuous: Boolean = true
+
     var currentLanguageCode: String = "bn-BD"
         private set
 
-    fun startListening(languageCode: String = "bn-BD") {
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var isCancelled: Boolean = false
+
+    fun startListening(languageCode: String = "bn-BD", continuous: Boolean = true) {
         currentLanguageCode = languageCode
+        isContinuous = continuous
+        isCancelled = false
 
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             onStateChanged(VoiceState.Error("Speech recognition is not available on this device"))
@@ -46,7 +55,7 @@ class SingBordVoiceInputManager(
         }
 
         try {
-            stopListening()
+            cleanupRecognizer()
 
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
                 setRecognitionListener(createListener())
@@ -77,24 +86,38 @@ class SingBordVoiceInputManager(
 
     fun stopListening() {
         try {
-            if (isListening) {
-                isListening = false
-                speechRecognizer?.stopListening()
-            }
+            isListening = false
+            speechRecognizer?.stopListening()
         } catch (e: Exception) {
             Log.e("SingBordVoice", "Error stopping speech recognizer", e)
         }
     }
 
-    fun cancel() {
+    private fun cleanupRecognizer() {
         try {
-            isListening = false
             speechRecognizer?.cancel()
             speechRecognizer?.destroy()
             speechRecognizer = null
-            onStateChanged(VoiceState.Idle)
         } catch (e: Exception) {
-            Log.e("SingBordVoice", "Error cancelling speech recognizer", e)
+            Log.e("SingBordVoice", "Error cleaning up speech recognizer", e)
+        }
+    }
+
+    fun cancel() {
+        isCancelled = true
+        isListening = false
+        mainHandler.removeCallbacksAndMessages(null)
+        cleanupRecognizer()
+        onStateChanged(VoiceState.Idle)
+    }
+
+    private fun restartIfContinuous() {
+        if (!isCancelled && isContinuous) {
+            mainHandler.postDelayed({
+                if (!isCancelled && isContinuous) {
+                    startListening(currentLanguageCode, continuous = true)
+                }
+            }, 300L)
         }
     }
 
@@ -106,6 +129,7 @@ class SingBordVoiceInputManager(
             }
 
             override fun onBeginningOfSpeech() {
+                isListening = true
                 onStateChanged(VoiceState.Listening)
             }
 
@@ -130,14 +154,17 @@ class SingBordVoiceInputManager(
                     SpeechRecognizer.ERROR_CLIENT -> "Client error"
                     SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission required"
                     SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network connection required"
-                    SpeechRecognizer.ERROR_NO_MATCH -> if (isBangla) "স্পষ্ট বোঝা যায়নি, আবার চেষ্টা করুন" else "No speech match. Tap mic to retry."
-                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Mic engine busy, reset..."
-                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> if (isBangla) "কোনো কথা শোনা যায়নি, আবার মাইকে চাপ দিন" else "No speech heard. Tap mic to speak."
-                    else -> "Voice input stopped"
+                    SpeechRecognizer.ERROR_NO_MATCH -> if (isBangla) "স্পষ্ট বোঝা যায়নি, আবার বলুন" else "No speech match. Tap mic to retry."
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Mic busy, resetting..."
+                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> if (isBangla) "কোনো কথা শোনা যায়নি" else "No speech heard. Speak now."
+                    else -> "Voice input paused"
                 }
 
                 if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                     onStateChanged(VoiceState.Error(msg))
+                    if (isContinuous && !isCancelled) {
+                        restartIfContinuous()
+                    }
                 } else if (error != SpeechRecognizer.ERROR_CLIENT) {
                     onStateChanged(VoiceState.Error(msg))
                 }
@@ -155,6 +182,7 @@ class SingBordVoiceInputManager(
                     }
                 }
                 onStateChanged(VoiceState.Idle)
+                restartIfContinuous()
             }
 
             override fun onPartialResults(partialResults: Bundle?) {
@@ -173,3 +201,4 @@ class SingBordVoiceInputManager(
         }
     }
 }
+

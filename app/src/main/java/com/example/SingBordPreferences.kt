@@ -183,17 +183,100 @@ class SingBordPreferences(context: Context) {
         return raw.split(CLIPBOARD_SEPARATOR).filter { it.isNotBlank() }
     }
 
-    fun addClipboardItem(text: String) {
+    fun getPinnedClips(): List<String> {
+        val raw = prefs.getString(KEY_PINNED_CLIPS, null) ?: return emptyList()
+        return raw.split(CLIPBOARD_SEPARATOR).filter { it.isNotBlank() }
+    }
+
+    fun isClipPinned(text: String): Boolean {
+        if (text.isBlank()) return false
+        return getPinnedClips().contains(text)
+    }
+
+    fun togglePinClip(text: String): Boolean {
+        if (text.isBlank()) return false
+        val currentPinned = getPinnedClips().toMutableList()
+        val willBePinned: Boolean
+        if (currentPinned.contains(text)) {
+            currentPinned.remove(text)
+            willBePinned = false
+        } else {
+            currentPinned.add(0, text)
+            willBePinned = true
+        }
+        prefs.edit().putString(KEY_PINNED_CLIPS, currentPinned.joinToString(CLIPBOARD_SEPARATOR)).apply()
+        return willBePinned
+    }
+
+    fun setClipPinned(text: String, isPinned: Boolean) {
+        if (text.isBlank()) return
+        val currentPinned = getPinnedClips().toMutableList()
+        currentPinned.remove(text)
+        if (isPinned) {
+            currentPinned.add(0, text)
+        }
+        prefs.edit().putString(KEY_PINNED_CLIPS, currentPinned.joinToString(CLIPBOARD_SEPARATOR)).apply()
+    }
+
+    fun addClipboardItem(text: String, isPinned: Boolean = false) {
         if (text.isBlank()) return
         val current = getClipboardHistory().toMutableList()
         current.remove(text)
         current.add(0, text)
-        val trimmed = current.take(20)
+        val trimmed = current.take(50)
         prefs.edit().putString(KEY_CLIPBOARD_HISTORY, trimmed.joinToString(CLIPBOARD_SEPARATOR)).apply()
+        if (isPinned) {
+            setClipPinned(text, true)
+        }
     }
 
-    fun clearClipboardHistory() {
-        prefs.edit().remove(KEY_CLIPBOARD_HISTORY).apply()
+    fun deleteClipboardItem(text: String) {
+        if (text.isBlank()) return
+        val current = getClipboardHistory().toMutableList()
+        current.remove(text)
+        prefs.edit().putString(KEY_CLIPBOARD_HISTORY, current.joinToString(CLIPBOARD_SEPARATOR)).apply()
+        
+        val pinned = getPinnedClips().toMutableList()
+        if (pinned.remove(text)) {
+            prefs.edit().putString(KEY_PINNED_CLIPS, pinned.joinToString(CLIPBOARD_SEPARATOR)).apply()
+        }
+    }
+
+    fun editClipboardItem(oldText: String, newText: String) {
+        if (newText.isBlank()) {
+            deleteClipboardItem(oldText)
+            return
+        }
+        val isPinned = isClipPinned(oldText)
+        val history = getClipboardHistory().toMutableList()
+        val index = history.indexOf(oldText)
+        if (index != -1) {
+            history[index] = newText
+        } else {
+            history.add(0, newText)
+        }
+        prefs.edit().putString(KEY_CLIPBOARD_HISTORY, history.joinToString(CLIPBOARD_SEPARATOR)).apply()
+
+        if (isPinned) {
+            val pinned = getPinnedClips().toMutableList()
+            val pIndex = pinned.indexOf(oldText)
+            if (pIndex != -1) {
+                pinned[pIndex] = newText
+            } else {
+                pinned.add(0, newText)
+            }
+            prefs.edit().putString(KEY_PINNED_CLIPS, pinned.joinToString(CLIPBOARD_SEPARATOR)).apply()
+        }
+    }
+
+    fun clearClipboardHistory(includePinned: Boolean = false) {
+        if (includePinned) {
+            prefs.edit().remove(KEY_CLIPBOARD_HISTORY).remove(KEY_PINNED_CLIPS).apply()
+        } else {
+            // Keep pinned items in history
+            val pinned = getPinnedClips()
+            prefs.edit().putString(KEY_CLIPBOARD_HISTORY, pinned.joinToString(CLIPBOARD_SEPARATOR)).apply()
+        }
     }
 
     fun getSettings(): KeyboardSettings {
@@ -352,6 +435,7 @@ class SingBordPreferences(context: Context) {
         private const val KEY_RECENT_EMOJIS = "recent_emojis"
         private const val KEY_RECENT_SYMBOLS = "recent_symbols"
         private const val KEY_CLIPBOARD_HISTORY = "clipboard_history"
+        private const val KEY_PINNED_CLIPS = "pinned_clips"
         private const val KEY_AUTH_USER_ID = "auth_user_id"
         private const val KEY_AUTH_USER_EMAIL = "auth_user_email"
         private const val KEY_AUTH_ACCESS_TOKEN = "auth_access_token"

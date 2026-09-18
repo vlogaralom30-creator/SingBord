@@ -61,7 +61,12 @@ data class KeyboardThemePalette(
     val bgGradientBottom: Color? = null,
     val bgMeshColors: List<Color>? = null,
     val enableWaterRipple: Boolean = true,
-    val waterRippleColor: Color? = null
+    val waterRippleColor: Color? = null,
+    // Special Reference Theme Visual FX
+    val isNeonGlow: Boolean = false,
+    val isRainbowSpectrum: Boolean = false,
+    val hasWaterDrops: Boolean = false,
+    val isKawaiiDessert: Boolean = false
 )
 
 object KeyboardThemes {
@@ -557,6 +562,233 @@ object KeyboardThemes {
         frostedGlassOverlay = false
     )
 
+    /**
+     * Photo 1: Cyber Cyan Neon Glow
+     * Pure pitch black OLED canvas, intense electric cyan neon outlines around every key,
+     * glowing cyan futuristic font and modifier icons.
+     */
+    val NEON_CYAN_GLOW = KeyboardThemePalette(
+        id = "neon_cyan_glow",
+        name = "Neon Cyan Glow",
+        subtitle = "Cyber Electric Cyan • Glowing Outlines & Font",
+        keyboardBg = Color(0xFF000000),
+        keyBg = Color(0xFF02090F),
+        keyTextColor = Color(0xFF00F0FF),
+        functionKeyBg = Color(0xFF051520),
+        functionTextColor = Color(0xFF00F0FF),
+        accentColor = Color(0xFF00F0FF),
+        accentTextColor = Color.Black,
+        gridBorderColor = Color.Transparent,
+        suggestionStripBg = Color(0xFF000000),
+        candidateBg = Color(0xFF04141E),
+        isDark = true,
+        isCustomTheme = true,
+        keyShapeStyle = KeyboardKeyShapeStyle.GLASSMORPHIC_3D,
+        keyCornerRadiusDp = 8.5f,
+        keyHorizontalGapDp = 3.5f,
+        keyVerticalGapDp = 6.0f,
+        keyElevationDp = 1.5f,
+        keyShadowColor = Color(0xFF00F0FF).copy(alpha = 0.35f),
+        keyBorderColor = Color(0xFF00F0FF),
+        keyBorderWidthDp = 1.3f,
+        keyGradientTop = Color(0xFF041824),
+        keyGradientBottom = Color(0xFF01060A),
+        functionKeyGradientTop = Color(0xFF062335),
+        functionKeyGradientBottom = Color(0xFF020E17),
+        shiftBadgeColor = Color(0xFF00F0FF),
+        backspaceBadgeColor = Color(0xFF00F0FF),
+        modeBadgeColor = Color(0xFF00F0FF),
+        enterBadgeColor = Color(0xFF00F0FF),
+        keyTextFontWeight = FontWeight.Medium,
+        spaceBarLabel = "English",
+        showSpaceVoiceGlyph = true,
+        showLanguageGlobeKey = false,
+        isNeonGlow = true,
+        enableWaterRipple = false
+    )
+
+    /**
+     * Photo 2: RGB Rainbow Neon Spectrum
+     * Pitch black background with floating keycaps and dynamic rainbow spectrum glow
+     * (Green -> Cyan -> Deep Blue -> Purple -> Pink -> Magenta -> Yellow) with matching neon fonts.
+     */
+    val RGB_RAINBOW_SPECTRUM = KeyboardThemePalette(
+        id = "rgb_rainbow_spectrum",
+        name = "RGB Rainbow Glow",
+        subtitle = "Per-Key Rainbow Spectrum • Neon Wave Glow",
+        keyboardBg = Color(0xFF030305),
+        keyBg = Color(0xFF0D0D14),
+        keyTextColor = Color.White,
+        functionKeyBg = Color(0xFF14141E),
+        functionTextColor = Color.White,
+        accentColor = Color(0xFF00F0FF),
+        accentTextColor = Color.Black,
+        gridBorderColor = Color.Transparent,
+        suggestionStripBg = Color(0xFF07070B),
+        candidateBg = Color(0xFF14141E),
+        isDark = true,
+        isCustomTheme = true,
+        keyShapeStyle = KeyboardKeyShapeStyle.GLASSMORPHIC_3D,
+        keyCornerRadiusDp = 10.0f,
+        keyHorizontalGapDp = 4.0f,
+        keyVerticalGapDp = 7.0f,
+        keyElevationDp = 2.0f,
+        keyShadowColor = Color.Black,
+        keyBorderColor = Color(0xFF00F0FF),
+        keyBorderWidthDp = 1.4f,
+        keyGradientTop = Color(0xFF1E1E2A),
+        keyGradientBottom = Color(0xFF0A0A10),
+        functionKeyGradientTop = Color(0xFF252536),
+        functionKeyGradientBottom = Color(0xFF0E0E16),
+        shiftBadgeColor = Color(0xFF38BDF8),
+        backspaceBadgeColor = Color(0xFFF43F5E),
+        modeBadgeColor = Color(0xFFEAB308),
+        enterBadgeColor = Color(0xFFA855F7),
+        keyTextFontWeight = FontWeight.Bold,
+        spaceBarLabel = "",
+        showSpaceVoiceGlyph = false,
+        showLanguageGlobeKey = false,
+        isRainbowSpectrum = true,
+        enableWaterRipple = false
+    )
+
+    /**
+     * Photo 3: Lavender 3D Water Droplet Glass
+     * Soft lilac purple background with realistic water condensation beads,
+     * 3D glossy translucent ice/water cube keycaps, bold white font & blue action button.
+     */
+    val LAVENDER_WATER_DROP_GLASS = KeyboardThemePalette(
+        id = "lavender_water_drop_glass",
+        name = "Lavender Water Droplets",
+        subtitle = "3D Glass Ice Cubes • Lilac Dew • Blue Action Pill",
+        keyboardBg = Color(0xFF6C5A76),
+        keyBg = Color(0xFF8D7899).copy(alpha = 0.55f),
+        keyTextColor = Color.White,
+        functionKeyBg = Color(0xFF7D6789).copy(alpha = 0.65f),
+        functionTextColor = Color.White,
+        accentColor = Color(0xFF3B82F6),
+        accentTextColor = Color.White,
+        gridBorderColor = Color.Transparent,
+        suggestionStripBg = Color(0xFF4A3854).copy(alpha = 0.70f),
+        candidateBg = Color(0xFF7D6789).copy(alpha = 0.50f),
+        isDark = true,
+        isCustomTheme = true,
+        keyShapeStyle = KeyboardKeyShapeStyle.GLASSMORPHIC_3D,
+        keyCornerRadiusDp = 12f,
+        keyHorizontalGapDp = 3.5f,
+        keyVerticalGapDp = 6.5f,
+        keyElevationDp = 2.5f,
+        keyShadowColor = Color(0xFF3D2A47).copy(alpha = 0.7f),
+        keyBorderColor = Color.White.copy(alpha = 0.85f),
+        keyBorderWidthDp = 1.2f,
+        keyGradientTop = Color.White.copy(alpha = 0.60f),
+        keyGradientBottom = Color(0xFF7E648B).copy(alpha = 0.35f),
+        functionKeyGradientTop = Color.White.copy(alpha = 0.65f),
+        functionKeyGradientBottom = Color(0xFF6B5377).copy(alpha = 0.45f),
+        shiftBadgeColor = Color.White.copy(alpha = 0.20f),
+        backspaceBadgeColor = Color.White.copy(alpha = 0.20f),
+        modeBadgeColor = Color.White.copy(alpha = 0.20f),
+        enterBadgeColor = Color(0xFF3B82F6),
+        keyTextFontWeight = FontWeight.Bold,
+        spaceBarLabel = "",
+        showSpaceVoiceGlyph = false,
+        showLanguageGlobeKey = false,
+        hasWaterDrops = true,
+        enableWaterRipple = true,
+        waterRippleColor = Color(0xFFE9D5FF)
+    )
+
+    /**
+     * Photo 4: Aqua Ice Water Droplet Glass
+     * Fresh aqua blue water splash background with dew drops, crystal-clear 3D glass bubbles,
+     * bold white letters and royal blue search/enter button.
+     */
+    val AQUA_WATER_DROP_GLASS = KeyboardThemePalette(
+        id = "aqua_water_drop_glass",
+        name = "Aqua Ice Water Droplets",
+        subtitle = "Crystal 3D Water Bubbles • Aqua Dew • Blue Action Pill",
+        keyboardBg = Color(0xFF5A8EAA),
+        keyBg = Color(0xFF7CB8D6).copy(alpha = 0.55f),
+        keyTextColor = Color.White,
+        functionKeyBg = Color(0xFF6AA7C7).copy(alpha = 0.65f),
+        functionTextColor = Color.White,
+        accentColor = Color(0xFF3B82F6),
+        accentTextColor = Color.White,
+        gridBorderColor = Color.Transparent,
+        suggestionStripBg = Color(0xFF346077).copy(alpha = 0.70f),
+        candidateBg = Color(0xFF6AA7C7).copy(alpha = 0.50f),
+        isDark = true,
+        isCustomTheme = true,
+        keyShapeStyle = KeyboardKeyShapeStyle.GLASSMORPHIC_3D,
+        keyCornerRadiusDp = 12f,
+        keyHorizontalGapDp = 3.5f,
+        keyVerticalGapDp = 6.5f,
+        keyElevationDp = 2.5f,
+        keyShadowColor = Color(0xFF224B61).copy(alpha = 0.7f),
+        keyBorderColor = Color.White.copy(alpha = 0.85f),
+        keyBorderWidthDp = 1.2f,
+        keyGradientTop = Color.White.copy(alpha = 0.60f),
+        keyGradientBottom = Color(0xFF4A89A8).copy(alpha = 0.35f),
+        functionKeyGradientTop = Color.White.copy(alpha = 0.65f),
+        functionKeyGradientBottom = Color(0xFF3B7A99).copy(alpha = 0.45f),
+        shiftBadgeColor = Color.White.copy(alpha = 0.20f),
+        backspaceBadgeColor = Color.White.copy(alpha = 0.20f),
+        modeBadgeColor = Color.White.copy(alpha = 0.20f),
+        enterBadgeColor = Color(0xFF3B82F6),
+        keyTextFontWeight = FontWeight.Bold,
+        spaceBarLabel = "",
+        showSpaceVoiceGlyph = false,
+        showLanguageGlobeKey = false,
+        hasWaterDrops = true,
+        enableWaterRipple = true,
+        waterRippleColor = Color(0xFF38BDF8)
+    )
+
+    /**
+     * Photo 5: Kawaii Cute Strawberry Dessert
+     * Pastel cream & blush pink palette, strawberry red border lines, cute rounded typography,
+     * custom cartoon cute icons (Strawberry shift, Milkshake backspace, Ice cream symbol, Strawberry cake slice enter).
+     */
+    val KAWAII_STRAWBERRY_DESSERT = KeyboardThemePalette(
+        id = "kawaii_strawberry_dessert",
+        name = "Kawaii Strawberry Dessert",
+        subtitle = "Pastel Strawberry • Cute Dessert Icons • Berry Accent",
+        keyboardBg = Color(0xFFFFFBF9),
+        keyBg = Color(0xFFFFECEF),
+        keyTextColor = Color(0xFF6B1D2F),
+        functionKeyBg = Color(0xFFFFDDE4),
+        functionTextColor = Color(0xFF6B1D2F),
+        accentColor = Color(0xFFE11D48),
+        accentTextColor = Color.White,
+        gridBorderColor = Color.Transparent,
+        suggestionStripBg = Color(0xFFFFF0F3),
+        candidateBg = Color(0xFFFFECEF),
+        isDark = false,
+        isCustomTheme = true,
+        keyShapeStyle = KeyboardKeyShapeStyle.ROUNDED_ELEVATED,
+        keyCornerRadiusDp = 12f,
+        keyHorizontalGapDp = 4.0f,
+        keyVerticalGapDp = 7.0f,
+        keyElevationDp = 2.0f,
+        keyShadowColor = Color(0xFFF472B6).copy(alpha = 0.4f),
+        keyBorderColor = Color(0xFFD4627A),
+        keyBorderWidthDp = 1.5f,
+        keyGradientTop = Color(0xFFFFF7F8),
+        keyGradientBottom = Color(0xFFFFE2E8),
+        functionKeyGradientTop = Color(0xFFFFF0F3),
+        functionKeyGradientBottom = Color(0xFFFFD5DE),
+        shiftBadgeColor = Color.Transparent,
+        backspaceBadgeColor = Color.Transparent,
+        modeBadgeColor = Color.Transparent,
+        enterBadgeColor = Color.Transparent,
+        keyTextFontWeight = FontWeight.Bold,
+        spaceBarLabel = "",
+        showSpaceVoiceGlyph = false,
+        showLanguageGlobeKey = false,
+        isKawaiiDessert = true,
+        enableWaterRipple = false
+    )
+
     val CLASSIC_THEMES = listOf(
         CLEAN_LIGHT,
         OLED_BLACK,
@@ -568,6 +800,11 @@ object KeyboardThemes {
     )
 
     val CUSTOM_THEMES = listOf(
+        NEON_CYAN_GLOW,
+        RGB_RAINBOW_SPECTRUM,
+        LAVENDER_WATER_DROP_GLASS,
+        AQUA_WATER_DROP_GLASS,
+        KAWAII_STRAWBERRY_DESSERT,
         AURORA_SUNSET_GLASS,
         OCEAN_WATER_WAVE,
         CYBERPUNK_NEON_PULSE,
